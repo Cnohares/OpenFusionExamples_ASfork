@@ -1,0 +1,68 @@
+﻿  ANDROID_HOME=E:\\Microsoft\AndroidSDK\25
+  ANT_HOME=C:\Program Files\Microsoft Visual Studio\2022\Community\Apps\apache-ant-1.9.3
+  JAVA_HOME=C:\Program Files\Android\jdk\jdk-8.0.302.8-hotspot\jdk8u302-b08
+  NDK_ROOT=E:\\Microsoft\AndroidNDK\android-ndk-r21e
+  pch.h
+  FindTheWay_JNI.cpp
+  In file included from FindTheWay_JNI.cpp:1:
+  In file included from ./FindTheWay_JNI.h:3:
+  In file included from ..\..\_DeLib\FindTheWay.h:20:
+..\..\_3rdLib\Base64.h(20,1): error : unknown type name 'concept'
+  concept STR = std::is_same_v<T, std::wstring> || std::is_same_v<T, std::string>;
+  ^
+..\..\_3rdLib\Base64.h(22,10): error : unknown type name 'STR'
+  template<STR base64Str>
+           ^
+..\..\_3rdLib\Base64.h(32,10): error : unknown type name 'STR'
+  template<STR base64Str>
+           ^
+..\..\_3rdLib\Base64.h(42,10): error : unknown type name 'STR'
+  template<STR base64Str>
+           ^
+..\..\_3rdLib\Base64.h(56,10): error : unknown type name 'STR'
+  template<STR base64Str>
+           ^
+..\..\_3rdLib\Base64.h(70,10): error : unknown type name 'STR'
+  template<STR base64Str>
+           ^
+..\..\_3rdLib\Base64.h(73,112): error : called object type 'int' is not a function or function pointer
+      using base64Char = std::remove_const_t<std::remove_reference_t<decltype(base64_chars_G<base64Str>(base64Str())[0])>>;
+                                                                                                        ~~~~~~~~~^
+..\..\_3rdLib\Base64.h(73,121): error : expected a type
+      using base64Char = std::remove_const_t<std::remove_reference_t<decltype(base64_chars_G<base64Str>(base64Str())[0])>>;
+                                                                                                                          ^
+..\..\_3rdLib\Base64.h(75,11): error : unknown type name 'base64Char'
+      const base64Char b64EndChar = base64_char_G<base64Str>(base64Str(), 0)[0];
+            ^
+..\..\_3rdLib\Base64.h(77,11): error : unknown type name 'base64Char'
+      const base64Char plusChar = base64_char_G<base64Str>(base64Str(), 1)[0];
+            ^
+..\..\_3rdLib\Base64.h(78,11): error : unknown type name 'base64Char'
+      const base64Char slashChar = base64_char_G<base64Str>(base64Str(), 2)[0];
+            ^
+..\..\_3rdLib\Base64.h(79,11): error : unknown type name 'base64Char'
+      const base64Char strEndChar = base64_char_G<base64Str>(base64Str(), -1)[0];
+            ^
+..\..\_3rdLib\Base64.h(81,11): error : unknown type name 'base64Str'
+      const base64Str base64_chars = base64_chars_G<base64Str>(base64Str());
+            ^
+..\..\_3rdLib\Base64.h(83,5): error : unknown type name 'base64Str'
+      base64Str enRet;
+      ^
+..\..\_3rdLib\Base64.h(86,27): error : unknown type name 'base64Char'
+      inline bool is_base64(base64Char c) {
+                            ^
+..\..\_3rdLib\Base64.h(109,12): error : unknown type name 'base64Str'
+      inline base64Str base64_encode(BYTE const* buf, unsigned int bufLen) {
+             ^
+..\..\_3rdLib\Base64.h(154,50): error : unknown type name 'base64Str'
+      inline std::vector<BYTE> base64_decode(const base64Str& encoded_string) {
+                                                   ^
+..\..\_3rdLib\Base64.h(208,48): error : unknown type name 'base64Str'
+      inline void base64_decode_to_pointer(const base64Str& encoded_string, BYTE* buff, size_t size) {
+                                                 ^
+..\..\_3rdLib\Base64.h(90,13): error : cannot use 'throw' with exceptions disabled
+              throw BASE64_DECODEERROR;
+              ^
+CLANGCOMPILE : fatal error : too many errors emitted, stopping now [-ferror-limit=]
+  20 errors generated.
