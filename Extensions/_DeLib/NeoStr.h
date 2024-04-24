@@ -118,6 +118,19 @@ constexpr auto FORMAT_OPERATION_GetRawStringByFilteredStringLength = 0b00000001;
 
 constexpr auto FORMAT_INVALID_ICON = static_cast<DWORD>(-1);
 
+struct NeoStrFormatException final :std::exception {
+private:
+	int flag = 0;
+
+public:
+	NeoStrFormatException(char const* const pMsg, int flag = 0) noexcept
+		:std::exception(pMsg) {
+		this->flag = flag;
+	}
+
+	inline int GetFlag() const noexcept { return this->flag; }
+};
+
 // D3D limitation
 // https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-resources-limits
 constexpr long D3D11_TEXTURE_SIZE = 16384;
@@ -616,6 +629,20 @@ private:
 	std::vector<FormatAlign> alignFormat;
 	std::vector<DWORD> alignStack;
 
+	struct CharOffsetDisplay {
+		float charOffsetX = 0.0f;
+		float charOffsetY = 0.0f;
+	};
+
+	CharOffsetDisplay charOffsetDisplay = { 0.0f,0.0f };
+
+	struct FormatCharOffsetDisplay :FormatBasic {
+		CharOffsetDisplay charOffsetDisplay;
+	};
+
+	std::vector<FormatCharOffsetDisplay> charOffsetFormat;
+	std::vector<CharOffsetDisplay> charOffsetStack;
+
 	// for shake control
 	struct FormatShake :FormatBasic {
 		ShakeControl shakeControl;
@@ -1036,6 +1063,9 @@ public:
 		this->iConFormat.reserve(DEFAULT_FORMAT_RESERVE);
 
 		// stack based
+		this->charOffsetFormat.reserve(DEFAULT_FORMAT_RESERVE);
+		this->charOffsetStack.reserve(DEFAULT_FORMAT_RESERVE);
+
 		this->alignFormat.reserve(DEFAULT_FORMAT_RESERVE);
 		this->alignStack.reserve(DEFAULT_FORMAT_RESERVE);
 
@@ -1828,12 +1858,8 @@ public:
 		// [Command] if not match follows, will be displayed as untouched
 		//	depend on your flag settings
 		// 
-		// [^]
-		//	ignore all formats after this
-		// 
-		// [^-]
-		//	ignore all formats except [ICon] after this
-		//	icon controls like [IConOffsetX] are also ignored
+		// [^ = Exclude, ...]
+		//	ignore all formats after this exclude given ones
 		// 
 		// [!^]
 		//	stop ignore all formats
@@ -1911,7 +1937,15 @@ public:
 		// 
 		// [Align = LEFT]
 		//  change align of different lines
+		//
+		// [CharOffsetX = 0.0][/CharOffsetX]
+		//  Char Offset X
+		//	See [Values General]
 		// 
+		// [CharOffsetY = 0.0][/CharOffsetY]
+		//  Char Offset Y
+		//	See [Values General]
+		//
 		// [Shake = Type, Amplitude, TimerCoef, CharOffset]
 		//	control shake.
 		//	if param is less than four, will be referred from right.
@@ -1991,6 +2025,12 @@ public:
 		this->iConFormat.clear();
 
 		// stack based
+		this->charOffsetStack.clear();
+		this->charOffsetStack.emplace_back(this->charOffsetDisplay);
+
+		this->charOffsetFormat.clear();
+		this->charOffsetFormat.emplace_back(FormatCharOffsetDisplay{ {0,0},charOffsetStack.back() });
+
 		this->alignStack.clear();
 		this->alignStack.emplace_back(this->dwDTFlags);
 
@@ -2042,7 +2082,8 @@ public:
 				pSavedChar[0] = L'@';
 				pSavedChar[1] = L'\0';
 #endif
-				throw std::exception("Get Raw String By Filtered String Length");
+				throw NeoStrFormatException("Get Raw String By Filtered String Length", 
+					FORMAT_OPERATION_GetRawStringByFilteredStringLength);
 			}
 		};
 
@@ -2055,7 +2096,7 @@ public:
 		const bool bIgnoreIncomplete = flags & FORMAT_IGNORE_INCOMPLETE;
 
 		bool bIgnoreFormat = false;
-		bool bIgnoreFormatExceptICon = false;
+		ControlParams ignoreFormatExclude;
 
 		while (true) {
 			// End
@@ -2187,23 +2228,37 @@ public:
 						// ------------
 						// parse commands & params
 						// ------------
+						auto CurrentCommandIgnored = [&] () {
+							if (!bIgnoreFormat) { return false; }
+
+							for (const auto& it : ignoreFormatExclude) {
+								if (StringViewIEqu(controlStr, it)) { return false; }
+							}
+
+							return true;
+							};
+
 						if (StringViewIEqu(controlStr, L"^")) {
 							bIgnoreFormat = true;
-							bIgnoreFormatExceptICon = false;
+							ignoreFormatExclude.clear();
 
-							break;
-						}
+							auto& paramParser = controlParam;
 
-						if (StringViewIEqu(controlStr, L"^-")) {
-							bIgnoreFormat = true;
-							bIgnoreFormatExceptICon = true;
+							do {
+
+							} while (ParseParam(paramParser
+								, [&ignoreFormatExclude] (std::wstring_view& param) {
+									ignoreFormatExclude.emplace_back(GetTrimmedStr(param));
+								}));
+
+							ignoreFormatExclude.erase(std::ranges::unique(ignoreFormatExclude).begin(), ignoreFormatExclude.end());
 
 							break;
 						}
 
 						if (StringViewIEqu(controlStr, L"!^")) {
 							bIgnoreFormat = false;
-							bIgnoreFormatExceptICon = false;
+							ignoreFormatExclude.clear();
 
 							break;
 						}
@@ -2261,9 +2316,7 @@ public:
 						}
 
 						if (StringViewIEqu(controlStr, L"Remark")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							auto& paramParser = controlParam;
 							controlParams.clear();
@@ -2292,9 +2345,7 @@ public:
 						}
 
 						if (StringViewIEqu(controlStr, L"ICon")) {
-							if (bIgnoreFormat && !bIgnoreFormatExceptICon) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							DWORD hImage = FORMAT_INVALID_ICON;
 
@@ -2349,10 +2400,6 @@ public:
 
 						// reset all
 						if (StringViewIEqu(controlStr, L"!")) {
-							if (bIgnoreFormat) {
-								break;
-							}
-
 							auto Reset = [&] (auto& stack, auto& format) {
 								std::remove_reference_t<decltype(stack[0])> first = stack.front();
 
@@ -2365,6 +2412,7 @@ public:
 							// reset stack based here
 							// note that icon or remark requires stack based
 							// to align, so doesn't reset them here
+							Reset(charOffsetStack, charOffsetFormat);
 							Reset(alignStack, alignFormat);
 							Reset(shakeStack, shakeFormat);
 							Reset(colorStack, colorFormat);
@@ -2439,9 +2487,7 @@ public:
 						// ------------
 
 						if (StringViewIEqu(controlStr, L"RemarkOffsetX")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							StackManager(remarkDisplayStack, remarkDisplayFormat, [&] (RemarkDisplay& remarkDisplay) {
 								// Reset
@@ -2462,9 +2508,7 @@ public:
 						}
 
 						if (StringViewIEqu(controlStr, L"RemarkOffsetY")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							StackManager(remarkDisplayStack, remarkDisplayFormat, [&] (RemarkDisplay& remarkDisplay) {
 								// Reset
@@ -2489,9 +2533,7 @@ public:
 						// ------------
 
 						if (StringViewIEqu(controlStr, L"IConOffsetX")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							StackManager(iConDisplayStack, iConDisplayFormat, [&] (IConDisplay& iConDisplay) {
 								// Reset
@@ -2512,9 +2554,7 @@ public:
 						}
 
 						if (StringViewIEqu(controlStr, L"IConOffsetY")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							StackManager(iConDisplayStack, iConDisplayFormat, [&] (IConDisplay& iConDisplay) {
 								// Reset
@@ -2535,9 +2575,7 @@ public:
 						}
 
 						if (StringViewIEqu(controlStr, L"IConScale")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							StackManager(iConDisplayStack, iConDisplayFormat, [&] (IConDisplay& iConDisplay) {
 								// Reset
@@ -2558,9 +2596,7 @@ public:
 						}
 
 						if (StringViewIEqu(controlStr, L"IConResample")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							StackManager(iConDisplayStack, iConDisplayFormat, [&] (IConDisplay& iConDisplay) {
 								// Reset
@@ -2582,9 +2618,7 @@ public:
 						// ------------
 
 						if (StringViewIEqu(controlStr, L"Align")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							StackManager(alignStack, alignFormat, [&] (DWORD& dwDTFlags) {
 								// Reset
@@ -2604,15 +2638,54 @@ public:
 							break;
 						}
 
+						if (StringViewIEqu(controlStr, L"CharOffsetX")) {
+							if (CurrentCommandIgnored()) { break; }
+
+							StackManager(charOffsetStack, charOffsetFormat, [&] (CharOffsetDisplay& charPosDisplay) {
+								// Reset
+								if (StringViewIEqu(controlParam, L"!")) {
+									charPosDisplay.charOffsetX = this->charOffsetStack.front().charOffsetX;
+
+									return;
+								}
+
+								charPosDisplay.charOffsetX = DiffManager(charPosDisplay.charOffsetX,
+									[&] (const std::wstring_view& controlParam) {
+										const auto size = _stof(controlParam);
+										return size;
+									});
+								});
+
+							break;
+						}
+
+						if (StringViewIEqu(controlStr, L"CharOffsetY")) {
+							if (CurrentCommandIgnored()) { break; }
+
+							StackManager(charOffsetStack, charOffsetFormat, [&] (CharOffsetDisplay& charPosDisplay) {
+								// Reset
+								if (StringViewIEqu(controlParam, L"!")) {
+									charPosDisplay.charOffsetY = this->charOffsetStack.front().charOffsetY;
+
+									return;
+								}
+
+								charPosDisplay.charOffsetY = DiffManager(charPosDisplay.charOffsetY,
+									[&] (const std::wstring_view& controlParam) {
+										const auto size = _stof(controlParam);
+										return size;
+									});
+								});
+
+							break;
+						}
 
 						// ------------
 						// shake
 						// ------------
 
 						if (StringViewIEqu(controlStr, L"Shake")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							StackManager(shakeStack, shakeFormat, [&] (ShakeControl& shakeControl) {
 								auto& paramParser = controlParam;
@@ -2663,9 +2736,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"Color")
 							|| StringViewIEqu(controlStr, L"C")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							StackManager(colorStack, colorFormat, [&] (Color& color) {
 								// Reset
@@ -2742,9 +2813,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"Font")
 							|| StringViewIEqu(controlStr, L"F")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							FontFormatControl([&] (LOGFONT& newLogFont) {
 								// Reset
@@ -2766,9 +2835,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"Size")
 							|| StringViewIEqu(controlStr, L"S")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							FontFormatControl([&] (LOGFONT& newLogFont) {
 								// Reset
@@ -2791,9 +2858,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"Bold")
 							|| StringViewIEqu(controlStr, L"B")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							FontFormatControl([&] (LOGFONT& newLogFont) {
 								newLogFont.lfWeight = FW_BOLD;
@@ -2804,9 +2869,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"!Bold")
 							|| StringViewIEqu(controlStr, L"!B")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							FontFormatControl([&] (LOGFONT& newLogFont) {
 								newLogFont.lfWeight = FW_NORMAL;
@@ -2817,9 +2880,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"Italic")
 							|| StringViewIEqu(controlStr, L"I")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							FontFormatControl([&] (LOGFONT& newLogFont) {
 								newLogFont.lfItalic = TRUE;
@@ -2830,9 +2891,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"!Italic")
 							|| StringViewIEqu(controlStr, L"!I")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							FontFormatControl([&] (LOGFONT& newLogFont) {
 								newLogFont.lfItalic = FALSE;
@@ -2843,9 +2902,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"Underline")
 							|| StringViewIEqu(controlStr, L"U")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							FontFormatControl([&] (LOGFONT& newLogFont) {
 								newLogFont.lfUnderline = TRUE;
@@ -2856,9 +2913,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"!Underline")
 							|| StringViewIEqu(controlStr, L"!U")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							FontFormatControl([&] (LOGFONT& newLogFont) {
 								newLogFont.lfUnderline = FALSE;
@@ -2869,9 +2924,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"StrikeOut")
 							|| StringViewIEqu(controlStr, L"S")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							FontFormatControl([&] (LOGFONT& newLogFont) {
 								newLogFont.lfStrikeOut = TRUE;
@@ -2882,9 +2935,7 @@ public:
 
 						if (StringViewIEqu(controlStr, L"!StrikeOut")
 							|| StringViewIEqu(controlStr, L"!S")) {
-							if (bIgnoreFormat) {
-								break;
-							}
+							if (CurrentCommandIgnored()) { break; }
 
 							FontFormatControl([&] (LOGFONT& newLogFont) {
 								newLogFont.lfStrikeOut = FALSE;
@@ -3673,6 +3724,8 @@ public:
 			}
 		};
 
+		auto charOffsetDisplay = this->charOffsetDisplay;
+		auto charOffsetItHandler = IteratorHandler(this->charOffsetFormat);
 		auto formatAlign = this->dwDTFlags;
 		auto alignItHandler = IteratorHandler(this->alignFormat);
 		auto colorItHandler = IteratorHandler(this->colorFormat);
@@ -3689,6 +3742,20 @@ public:
 		// ------------
 		// render & calculate position of each char
 		// ------------
+		// Exceptions used to terminate render, should be catched and do nothing
+		struct NeoStrRenderException final :std::exception {
+		private:
+			int flag = 0;
+
+		public:
+			NeoStrRenderException(char const* const pMsg, int flag = 0) noexcept
+				:std::exception(pMsg) {
+				this->flag = flag;
+			}
+
+			inline int GetFlag() const noexcept { return this->flag; }
+		};
+
 		try {
 			for (auto& curStrPos : this->strPos) {
 #ifdef _DEBUG
@@ -3723,7 +3790,7 @@ public:
 					formatAlign = alignIt->dwDTFlags;
 				});
 
-				// RAII
+				// RAII: align only has effect for current line
 				auto alignHandler = AlignHandler(&this->dwDTFlags, formatAlign);
 				int x = GetStartPosX(curStrPos.width, rcWidth);
 				x -= GDIPlusOffset;
@@ -3731,25 +3798,47 @@ public:
 				for (size_t curChar = 0; curChar < curStrPos.length; curChar++, totalChar++) {
 					auto offset = curStrPos.start + curChar;
 					if (offset >= opt.renderCharCount) {
-						throw std::exception("Exceed visable ratio");
+						throw NeoStrRenderException("Exceed visable ratio");
 					}
 
+					// get char size
 					auto pCurChar = pText + offset;
 					charSz = &pCharSizeArr[offset];
 
-					pCharPosArr[offset] = CharPos{ x + GDIPlusOffset,
-													this->startY + curStrPos.y,
+
+					// ---------
+					// update iterator
+					// ---------
+
+					// stack based
+					charOffsetItHandler.Forward(totalChar, [&] (auto charPosIt) {
+						charOffsetDisplay = charPosIt->charOffsetDisplay;
+					});
+
+					const double charOffsetX = charOffsetDisplay.charOffsetX * static_cast<double>(charSz->width);
+					const double charOffsetY = charOffsetDisplay.charOffsetY * static_cast<double>(charSz->height);
+
+					// corrected position (no border offset)
+					const double displayX = x + charOffsetX;
+					const double displayY = curStrPos.y + charOffsetY;
+
+					// position relative to object left top
+					pCharPosArr[offset] = CharPos{ static_cast<long>(displayX + GDIPlusOffset),
+													static_cast<long>(this->startY + displayY),
 													0,0,
 													ShakeControl() };
 
-#pragma region FORMAT_IT				
-					auto positionX = (float)(x + this->borderOffsetX);
-					auto positionY = (float)(curStrPos.y + this->borderOffsetY);
+					const auto& curCharPos = pCharPosArr[offset];
+
+#pragma region FORMAT_IT
+					// position relative to bitmap for rendering
+					auto positionX = static_cast<float>(displayX + this->borderOffsetX);
+					auto positionY = static_cast<float>(displayY + this->borderOffsetY);
 
 					// update position
 					if (opt.positionCallback != nullptr) {
 						if (!opt.positionCallback(charSz, &pCharPosArr[offset], positionX, positionY)) {
-							throw std::exception("Exceed remark base length");
+							throw NeoStrRenderException("Exceed remark base length");
 						}
 					}
 
@@ -3791,14 +3880,14 @@ public:
 					});
 					iConItHandler.Forward(totalChar, [&] (auto iConIt) {
 						// use updated position
-						iConIt->x = (size_t)positionX;
-						iConIt->y = (size_t)positionY;
+						iConIt->x = static_cast<size_t>(positionX);
+						iConIt->y = static_cast<size_t>(positionY);
 					});
 #pragma endregion
 
 					if (!opt.ClipChar(pRc->left, pRc->top,
-						x, this->startY + curStrPos.y, charSz)) {
-						struct ColorUpdater {
+						curCharPos.x, curCharPos.y, charSz)) {
+						struct ColorUpdater {  // NOLINT(cppcoreguidelines-special-member-functions)
 							SolidBrush* pBrush = nullptr;
 							SolidBrush oldBrush = SolidBrush(Color());
 
@@ -3848,7 +3937,8 @@ public:
 							auto blackPen = Pen(&solidBrush, 1);
 							status = pGraphic->DrawRectangle(&blackPen,
 								positionX, positionY,
-								(float)charSz->width, (float)charSz->height);
+								static_cast<float>(charSz->width),
+								static_cast<float>(charSz->height));
 						}
 						//assert(status == Status::Ok);
 					}
@@ -3856,7 +3946,7 @@ public:
 					x += (charSz->width + nColSpace);
 				}
 			}
-		} catch([[maybe_unused]] std::exception& e) {  // NOLINT(bugprone-empty-catch)
+		} catch([[maybe_unused]] NeoStrRenderException& e) {  // NOLINT(bugprone-empty-catch)
 			// use exception to jump out of the loop if exceeds the
 			// render char count, so nothing to handle here
 		}
