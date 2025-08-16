@@ -4,6 +4,8 @@
 
 #include <functional>
 
+#include "FFMpegAdapterD3D11.h"
+
 // -----------------------------
 // Forward declaration
 // -----------------------------
@@ -26,7 +28,7 @@ inline void UpdateScale(LPRDATA rdPtr, int width, int height) {
 }
 
 inline void ReDisplay(LPRDATA rdPtr) {
-	if (rdPtr->pMemSf != nullptr && rdPtr->pMemSf->IsValid()) {
+	if (rdPtr->pDisplaySf != nullptr && rdPtr->pDisplaySf->IsValid()) {
 		//callRunTimeFunction(rdPtr, RFUNCTION_REDRAW, 0, 0);
 		rdPtr->bChanged = true;
 		rdPtr->rc.rcChanged = true;
@@ -41,32 +43,30 @@ inline void ReDisplay(LPRDATA rdPtr) {
 	}
 }
 
-inline void InitSurface(LPSURFACE& pSf, const int width, const int height) {
-	if (pSf == nullptr || pSf->GetWidth() != width || pSf->GetHeight() != height) {
-
+inline void InitSurface(LPSURFACE& pSf, 
+    const int width, const int height, 
+    bool bHWA = false) {
+    if (pSf == nullptr
+        || pSf->GetWidth() != width || pSf->GetHeight() != height
+        || IsHWA(pSf) != bHWA) {
+        if (!bHWA) {
 #ifdef VIDEO_ALPHA
-		pSf = CreateSurface(32, width, height);
+            pSf = CreateSurface(32, width, height);
 #else
-		pSf = CreateSurface(24, width, height);
+            pSf = CreateSurface(24, width, height);
 #endif
+        }
+        else {
+            pSf = CreateHWASurface(32, width, height, ST_HWA_RTTEXTURE);
+        }
 
-		auto alphaSz = width * height;
-
-		auto pAlpha = new BYTE[alphaSz];
-		memset(pAlpha, 255, alphaSz);
-
-		pSf->SetAlpha(pAlpha, width);
-
-		delete[] pAlpha;
-		pAlpha = nullptr;
+        // alpha channel is ignored if surface type is ST_HWA_RTTEXTURE
+        _AddAlpha(pSf);
 	}
 }
 
-inline void CopyData(const unsigned char* pData, int srcLineSz, LPSURFACE pMemSf, bool bPm) {
-	if (pData == nullptr || pMemSf == nullptr) {
-		return;
-	}
-
+inline void CopyBitmap(const unsigned char* pData, int srcLineSz,
+    LPSURFACE pMemSf, bool bPm) {
 	// pMemSf must have alpha channel, see `InitSurface`
 	auto sfCoef = GetSfCoef(pMemSf);
 	if (sfCoef.pData == nullptr || sfCoef.pAlphaData == nullptr) {
@@ -153,13 +153,104 @@ inline void CopyData(const unsigned char* pData, int srcLineSz, LPSURFACE pMemSf
 	return;
 }
 
+struct CopyTextureContext {
+    D3DSharedHandler* pD3DSharedHandler = nullptr;
+    D3DLocalHandler* pD3DLocalHandler = nullptr;
+    const CopyToTextureContext* pFFMpegCtx = nullptr;
+};
+
+inline void CopyTexture(const unsigned char* pData, const int width, const int height,
+     LPSURFACE pRTTSf, bool bPm) {
+    // 1. basic info
+    const auto pCtx = (const CopyTextureContext*)pData;
+    auto pD3DSharedHandler = pCtx->pD3DSharedHandler;
+    auto pD3DLocalHandler = pCtx->pD3DLocalHandler;
+    
+    HRESULT hr = S_OK;
+
+    // Format:      DXGI_FORMAT_NV12 (YUV 4:2:0)
+    //              DXGI_FORMAT_P010 (YUV 4:2:2)
+    //              DXGI_FORMAT_P010 (YUV 4:2:2)
+    // Usage:       D3D11_USAGE_DEFAULT (GPU write & read)
+    // Bind flags:  512 (D3D11_BIND_DECODER)
+    //                  Set this flag to indicate that a 2D texture is used to 
+    //                  receive output from the decoder API. The common way to 
+    //                  create resources for a decoder output is by calling the 
+    //                  ID3D11Device::CreateTexture2D method to create an array 
+    //                  of 2D textures. However, you cannot use texture arrays 
+    //                  that are created with this flag in calls to 
+    //                  ID3D11Device::CreateShaderResourceView.
+    auto sharedHandle = pCtx->pFFMpegCtx->sharedHandle;
+    auto textureFormat = pCtx->pFFMpegCtx->textureFormat;
+
+    // Fusion Context
+    auto renderHelper = RenderHelper{ pRTTSf };     // ST_HWA_RTTEXTURE
+    auto RTTInfo = GetSurfaceInfo(pRTTSf);
+
+    auto pFusionDevice = (ID3D11Device*)RTTInfo.m_pD3D11Device;
+    auto pFusionDeviceCtx = (ID3D11DeviceContext*)RTTInfo.m_pD3D11Context;
+
+    // Format:      DXGI_FORMAT_B8G8R8A8_UNORM
+    // Usage:       D3D11_USAGE_DEFAULT (GPU write & read)
+    // Bind flags:  40 (D3D11_BIND_SHADER_RESOURCE & D3D11_BIND_RENDER_TARGET)
+    //              D3D11_BIND_SHADER_RESOURCE
+    //                  Bind a buffer or texture to a shader stage; this flag cannot 
+    //                  be used with the D3D11_MAP_WRITE_NO_OVERWRITE flag.
+    //              D3D11_BIND_RENDER_TARGET
+    //                  Bind a texture as a render target for the output-merger stage.
+    auto pRTTexture = *(ID3D11Texture2D**)(RTTInfo.m_ppD3D11RenderTargetTexture);    
+    auto pRTTextureView = *(ID3D11RenderTargetView**)(RTTInfo.m_ppD3D11RenderTargetView);
+
+    // 2. vertex shader
+    pD3DSharedHandler->vertexHelper.UpdateContext(pFusionDeviceCtx);
+
+    // 3. pixel shader
+    pD3DSharedHandler->pixelHelper.UpdateContext(pFusionDeviceCtx);
+
+    // 4. resolution & shared texture
+    pD3DLocalHandler->UpdateResolution(pFusionDeviceCtx, width, height);
+    if (FAILED(pD3DLocalHandler->hr)) { return; }
+    pD3DLocalHandler->UpdateSharedTexture(pFusionDeviceCtx, sharedHandle, textureFormat);
+    if (FAILED(pD3DLocalHandler->hr)) { return; }
+
+    pD3DLocalHandler->UpdateContext(pFusionDeviceCtx);
+
+    // 5. render
+    ID3D11RenderTargetView* rtvs[] = { pRTTextureView };
+    pFusionDeviceCtx->OMSetRenderTargets(1, rtvs, nullptr);
+
+    pFusionDeviceCtx->DrawIndexed(pD3DSharedHandler->vertexHelper.indicesSize, 0, 0);
+}
+
+inline void CopyData(LPRDATA rdPtr, LPSURFACE pDst,
+    // passed in callback
+    const unsigned char* pData, const int width, const int height) {
+    if (pData == nullptr || pDst == nullptr) { return; }
+
+    // pDst must match bCopyToTexture, see `InitSurface`
+    if (!rdPtr->pFFMpeg->get_copyToTextureState()) {
+        CopyBitmap(pData, width, pDst, rdPtr->bPm);
+    }
+    else {
+        auto ctx = CopyTextureContext{
+        .pD3DSharedHandler = rdPtr->pData->pD3DSharedHandler,
+        .pD3DLocalHandler = rdPtr->pD3DLocalHandler,
+        .pFFMpegCtx = (const CopyToTextureContext*)pData
+        };
+
+        CopyTexture((const unsigned char*)(&ctx), width, height, pDst, rdPtr->bPm);
+    }
+}
+
 inline void BlitVideoFrame(LPRDATA rdPtr, size_t ms, const LPSURFACE& pSf) {
 	if (rdPtr->pFFMpeg == nullptr) {
 		return;
 	}
 
 	rdPtr->pFFMpeg->get_videoFrame(ms, rdPtr->bAccurateSeek, [&](const unsigned char* pData, const int stride, const int height) {
-		CopyData(pData, stride, pSf, rdPtr->bPm);
+        if (rdPtr->pFFMpeg->get_copyToTextureState()) { rdPtr->pFFMpeg->gpu_wait(); }
+
+        CopyData(rdPtr, pSf, pData, stride, height);
 		ReDisplay(rdPtr);
 		});
 }
@@ -170,23 +261,38 @@ inline void NextVideoFrame(LPRDATA rdPtr) {
 	}
 
 	rdPtr->pFFMpeg->get_nextFrame([&](const unsigned char* pData, const int stride, const int height) {
-		CopyData(pData, stride, rdPtr->pMemSf, rdPtr->bPm);
+        CopyData(rdPtr, rdPtr->pDisplaySf, pData, stride, height);
 		ReDisplay(rdPtr);
 		});
 }
 
-// return pMemSf, if bHwa == true, cast it to HWA and save to pHwaSf;
-inline long ReturnVideoFrame(LPRDATA rdPtr, bool bHwa, const LPSURFACE& pMemSf, LPSURFACE& pHwaSf) {
-	if (!bHwa) {
-		return ConvertToLong(pMemSf);
+// convert pSrc to pDst if needed
+inline long ReturnVideoFrame(LPRDATA rdPtr, bool bWantHWA, const LPSURFACE& pSrc, LPSURFACE& pDst) {
+    // want bitmap
+	if (!bWantHWA) {
+        // source is bitmap
+        if(!IsHWA(pSrc)){ return ConvertToLong(pSrc); }
+        // source is HWA
+        else {
+            delete pDst;
+            pDst = nullptr;
+            pDst = ConvertBitmap(rdPtr, pSrc);
+
+            return ConvertToLong(pSrc);
+        }
 	}
+    // want HWA
 	else {
-		delete pHwaSf;
-		pHwaSf = nullptr;
+        // source is HWA
+        if (IsHWA(pSrc)) { return ConvertToLong(pSrc); }
+        // source is bitmap
+        else {
+            delete pDst;
+            pDst = nullptr;
+            pDst = ConvertHWATexture(rdPtr, pSrc);
 
-		pHwaSf = ConvertHWATexture(rdPtr, pMemSf);
-
-		return ConvertToLong(pHwaSf);
+            return ConvertToLong(pDst);
+        }
 	}
 }
 
@@ -194,36 +300,50 @@ inline long ReturnVideoFrame(LPRDATA rdPtr, bool bHwa, const LPSURFACE& pMemSf, 
 // Video control
 // -----------------------------
 
+inline bool VideoSingleFrame(LPRDATA rdPtr) {
+    return rdPtr->pFFMpeg->get_videoFrameCount() == 1;
+}
+
 constexpr auto SeekFlag_NoGoto = 0x0001 << 16;	// do not decode to next valid frame
 constexpr auto SeekFlag_NoRevert = 0x0002 << 16;	// do not revert if timestamp is 0
 
-// seek video to given position
+// seek video to given position, return false on decode error
 // by default, it will decode to first valid frame (accurate seek enabled & not `AVSEEK_FLAG_BYTE`)
 // and revert back if target timestamp is 0
 // this behaviour can be controlled by flags
-inline void SetPositionGeneral(LPRDATA rdPtr, int ms, int flags = SeekFlags) {
-	if (!rdPtr->bOpen) {
-		return;
-	}
+inline bool SetPositionGeneral(LPRDATA rdPtr, int ms, int flags = SeekFlags) {
+    if (!rdPtr->bOpen) { return true; }
 
-	// add protection for minus position
-	ms =(std::max)(ms, 0);
+    // add protection for minus position
+    ms = (std::max)(ms, 0);
 
-	do {
-		//auto pos = rdPtr->pFFMpeg->get_videoPosition();
-		rdPtr->pFFMpeg->set_videoPosition(ms, flags);
-		
-		bool bGoto = rdPtr->bAccurateSeek && (flags & AVSEEK_FLAG_BYTE) != AVSEEK_FLAG_BYTE;
-		if (!bGoto || flags & SeekFlag_NoRevert) { break; }
-		rdPtr->pFFMpeg->goto_videoPosition(ms, [&] (const unsigned char* pData, const int stride, const int height) {
-			CopyData(pData, stride, rdPtr->pMemSf, rdPtr->bPm);
-			ReDisplay(rdPtr);
-			});
+    // in case of only one frame, aka static picture, only use goto
+    // as seek for picture won't reset the context and cannot decode next time
+    const auto bSingleFrame = VideoSingleFrame(rdPtr);
 
-		// revert
-		if (ms != 0 || flags & SeekFlag_NoRevert) { break; }
-		rdPtr->pFFMpeg->set_videoPosition(ms, flags);
-	} while (false);
+    int response = 0;
+
+    //auto pos = rdPtr->pFFMpeg->get_videoPosition();
+    if (!bSingleFrame) { response = rdPtr->pFFMpeg->set_videoPosition(ms, flags); }
+    if (response < 0) { return false; }
+
+    const bool bGoto = rdPtr->bAccurateSeek && (flags & AVSEEK_FLAG_BYTE) != AVSEEK_FLAG_BYTE;
+    if (!(bGoto || bSingleFrame) || flags & SeekFlag_NoGoto) { return true; }
+    response = rdPtr->pFFMpeg->goto_videoPosition(ms, [&] (const unsigned char* pData, const int stride, const int height) {
+        // to avoid green screen at start
+        if (rdPtr->pFFMpeg->get_copyToTextureState()) { rdPtr->pFFMpeg->gpu_wait(); }
+
+        CopyData(rdPtr, rdPtr->pDisplaySf, pData, stride, height);
+        ReDisplay(rdPtr);
+        });
+    if (response < 0) { return false; }
+
+    // revert
+    if (ms != 0 || flags & SeekFlag_NoRevert) { return true; }
+    if (!bSingleFrame) { response = rdPtr->pFFMpeg->set_videoPosition(ms, flags); }
+    if (response < 0) { return false; }
+
+    return true;
 }
 
 inline bool GetVideoPlayState(LPRDATA rdPtr) {
@@ -296,9 +416,15 @@ inline void CloseGeneral(LPRDATA rdPtr) {
 inline FFMpegOptions GetOptions(LPRDATA rdPtr) {
 	FFMpegOptions opt;
 
-	opt.flag = rdPtr->hwDeviceType | (rdPtr->bForceNoAudio ? FFMpegFlag_ForceNoAudio : 0);
+    opt.flag = rdPtr->hwDeviceType
+        | (rdPtr->bForceNoAudio ? FFMpegFlag_ForceNoAudio : FFMpegFlag_Disabled)
+        | (rdPtr->bCopyToTexture ? FFMpegFlag_CopyToTexture : FFMpegFlag_Disabled)
+        | (rdPtr->bSharedHardWareDevice ? FFMpegFlag_SharedHardWareDevice : FFMpegFlag_Disabled);
+
 	opt.videoCodecName = *rdPtr->pVideoOverrideCodecName;
 	opt.audioCodecName = *rdPtr->pAudioOverrideCodecName;
+    
+    opt.SetThreadCount(rdPtr->threadCount);
 
 	return opt;
 }
@@ -358,10 +484,15 @@ inline void OpenGeneral(LPRDATA rdPtr, std::wstring& filePath, std::wstring& key
 		rdPtr->bPlayStateUpdated = true;
 
 		// update display
-		UpdateScale(rdPtr, rdPtr->pFFMpeg->get_width(), rdPtr->pFFMpeg->get_height());
-		InitSurface(rdPtr->pMemSf, rdPtr->pFFMpeg->get_width(), rdPtr->pFFMpeg->get_height());
+        UpdateScale(rdPtr, rdPtr->pFFMpeg->get_width(), rdPtr->pFFMpeg->get_height());
+        InitSurface(rdPtr->pDisplaySf,
+            rdPtr->pFFMpeg->get_width(), rdPtr->pFFMpeg->get_height(),
+            rdPtr->pFFMpeg->get_copyToTextureState());
 		// display first valid frame
-		SetPositionGeneral(rdPtr, static_cast<int>(ms));
+        if (!SetPositionGeneral(rdPtr, static_cast<int>(ms))) {
+            // failed to display first frame, which indicates error
+            throw FFMpegException(FFMpegException_DecodeFailed);
+        }
 
 		// update FFMpeg
 		// audio pause is updated in handle routine, in case event cost a long time
@@ -378,20 +509,28 @@ inline void OpenGeneral(LPRDATA rdPtr, std::wstring& filePath, std::wstring& key
 	catch ([[maybe_unused]] FFMpegException& e) {
 		CloseGeneral(rdPtr);
 
-		if (!opt.NoOverride()) {
-			auto newOpt = opt;
-			newOpt.ResetOverride();
+        // fallback to software decode
+        if (rdPtr->hwDeviceType != AV_HWDEVICE_TYPE_NONE || rdPtr->bCopyToTexture) {
+            rdPtr->hwDeviceType = AV_HWDEVICE_TYPE_NONE;
+            rdPtr->bCopyToTexture = false;
 
-			OpenGeneral(rdPtr, filePath, key, newOpt, ms);
-		}
-		else {
-			// update path for condition to check
-			*rdPtr->pFilePath = filePath;
+            OpenGeneral(rdPtr, filePath, key, GetOptions(rdPtr), ms);
+        }
+        // fallback to default decoder
+        else if (!opt.NoOverride()) {
+            FFMpegOptions newOpt = opt;
+            newOpt.ResetOverride();
 
-			CallEvent(ON_OPENFAILED);
+            OpenGeneral(rdPtr, filePath, key, newOpt, ms);
+        }
+        else {
+            // update path for condition to check
+            *rdPtr->pFilePath = filePath;
 
-			*rdPtr->pFilePath = L"";
-		}
+            CallEvent(ON_OPENFAILED);
+
+            *rdPtr->pFilePath = L"";
+        }
 	}
 }
 

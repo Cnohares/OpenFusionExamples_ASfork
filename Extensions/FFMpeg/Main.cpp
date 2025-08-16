@@ -50,7 +50,7 @@ short actionsInfos[]=
 		IDMN_ACTION_SP, M_ACTION_SP, ACT_ACTION_SP,	0, 1, PARAM_EXPRESSION, M_POSITION,
 		IDMN_ACTION_SPWF, M_ACTION_SPWF, ACT_ACTION_SPWF,	0, 2, PARAM_EXPRESSION, PARAM_EXPRESSION, M_POSITION_WF, M_FLAGS,
 
-		IDMN_ACTION_SQS, M_ACTION_SQS, ACT_ACTION_SQS,	0, 2, PARAM_EXPRESSION, PARAM_EXPRESSION, M_AUDIOQUEUESIZE, M_VIDEOQUEUESIZE,
+		IDMN_ACTION_STC, M_ACTION_STC, ACT_ACTION_STC, 0, 1, PARAM_EXPRESSION, M_THEADCOUNT,
 
 		IDMN_ACTION_SAS, M_ACTION_SAS, ACT_ACTION_SAS, 0, 1, PARAM_EXPRESSION, M_ACCURATESEEK,
 
@@ -70,6 +70,8 @@ short actionsInfos[]=
 		IDMN_ACTION_SOC, M_ACTION_SOC, ACT_ACTION_SOC, 0, 2, PARAM_EXPSTRING, PARAM_EXPSTRING, M_VCODEC, M_ACODEC,
 
 		IDMN_ACTION_RD, M_ACTION_RD, ACT_ACTION_RD,	0, 0,
+
+        IDMN_ACTION_SCTT, M_ACTION_SCTT, ACT_ACTION_SCTT, 0, 1, PARAM_EXPRESSION, M_COPYTOTEXTURE,
 
 		};
 
@@ -98,6 +100,8 @@ short expressionsInfos[]=
 		
 		IDMN_EXPRESSION_GVOCN, M_EXPRESSION_GVOCN, EXP_EXPRESSION_GVOCN, EXPFLAG_STRING, 0,
 		IDMN_EXPRESSION_GAOCN, M_EXPRESSION_GAOCN, EXP_EXPRESSION_GAOCN, EXPFLAG_STRING, 0,
+
+        IDMN_EXPRESSION_GTC, M_EXPRESSION_GTC, EXP_EXPRESSION_GTC, 0, 0,
 		};
 
 
@@ -196,7 +200,7 @@ short WINAPI DLLExport Action_PauseVideo(LPRDATA rdPtr, long param1, long param2
 short WINAPI DLLExport Action_SetVolume(LPRDATA rdPtr, long param1, long param2) {
 	int newVolume = (int)CNC_GetIntParameter(rdPtr);
 
-	rdPtr->volume = min(100, max(0, newVolume));
+    rdPtr->volume = ::Range(newVolume, 0, 100);
 	if (rdPtr->pFFMpeg != nullptr) {
 		rdPtr->pFFMpeg->set_volume(rdPtr->volume);
 	}
@@ -218,6 +222,8 @@ short WINAPI DLLExport Action_SetPosition(LPRDATA rdPtr, long param1, long param
 	int msRaw = (int)CNC_GetIntParameter(rdPtr);
 
 	SetPositionGeneral(rdPtr, msRaw);
+    // true if goto target position
+    rdPtr->bPositionSet = true;
 
 	return 0;
 }
@@ -227,16 +233,17 @@ short WINAPI DLLExport Action_SetPositionWithFlag(LPRDATA rdPtr, long param1, lo
 	int flag = (int)CNC_GetIntParameter(rdPtr);
 
 	SetPositionGeneral(rdPtr, msRaw, flag);
+    // true if goto target position
+    rdPtr->bPositionSet = !(flag & SeekFlag_NoGoto);
 
 	return 0;
 }
 
-[[deprecated ]]
-short WINAPI DLLExport Action_SetQueueSize(LPRDATA rdPtr, long param1, long param2) {
-#ifndef RUN_ONLY
-	MSGBOX(L"Queue size is now automatically managed");
-#endif
-	return 0;
+short WINAPI DLLExport Action_SetThreadCount(LPRDATA rdPtr, long param1, long param2) {
+    const auto threadCount = (int)CNC_GetIntParameter(rdPtr);
+    rdPtr->threadCount = FFMpegOptions::GetValidThreadCount(threadCount);
+
+    return 0;
 }
 
 short WINAPI DLLExport Action_SetAccurateSeek(LPRDATA rdPtr, long param1, long param2) {
@@ -293,15 +300,31 @@ short WINAPI DLLExport Action_SetHWDevice(LPRDATA rdPtr, long param1, long param
 
 	rdPtr->hwDeviceType = FFMpeg::get_hwDeviceTypeByName(deviceName);
 
+    // auto managed
+    if (rdPtr->hwDeviceType != AV_HWDEVICE_TYPE_D3D11VA) {
+        rdPtr->bCopyToTexture = false;
+    }
+
 	return 0;
+}
+
+short WINAPI DLLExport Action_SetCopyToTexture(LPRDATA rdPtr, long param1, long param2) {
+    rdPtr->bCopyToTexture = (bool)CNC_GetIntParameter(rdPtr);
+    
+    // auto managed
+    if (rdPtr->bCopyToTexture) {
+        rdPtr->hwDeviceType = AV_HWDEVICE_TYPE_D3D11VA;
+    }
+
+    return 0;
 }
 
 short WINAPI DLLExport Action_Stretch(LPRDATA rdPtr, long param1, long param2) {
 	int width = (int)CNC_GetIntParameter(rdPtr);
 	int height = (int)CNC_GetIntParameter(rdPtr);
 	
-	rdPtr->swidth = max(0, width);
-	rdPtr->sheight = max(0, height);
+	rdPtr->swidth = (std::max)(0, width);
+	rdPtr->sheight = (std::max)(0, height);
 	
 	rdPtr->bStretch = true;
 
@@ -346,13 +369,10 @@ short WINAPI DLLExport Action_SetOverrideCodec(LPRDATA rdPtr, long param1, long 
 }
 
 short WINAPI DLLExport Action_ResetDisplay(LPRDATA rdPtr, long param1, long param2) {
-	if (!GetVideoPlayState(rdPtr) && rdPtr->pMemSf != nullptr && rdPtr->pMemSf->IsValid()) {
-		_ForceAddAlpha(rdPtr->pMemSf, 0);
-
-		if(rdPtr->bPm) {
-			rdPtr->pMemSf->PremultiplyAlpha();
-		}
-	}
+    if (!GetVideoPlayState(rdPtr)
+        && rdPtr->pDisplaySf != nullptr && rdPtr->pDisplaySf->IsValid()) {
+        rdPtr->bResetDisplay = true;
+    }
 
 	return 0;
 }
@@ -386,28 +406,30 @@ long WINAPI DLLExport Expression_GetVolume(LPRDATA rdPtr, long param1) {
 }
 
 long WINAPI DLLExport Expression_GetCurrentVideoFramePointer(LPRDATA rdPtr, long param1) {
-	bool bHwa = (bool)CNC_GetFirstExpressionParameter(rdPtr, param1, TYPE_INT);
+	bool bWantHWA = (bool)CNC_GetFirstExpressionParameter(rdPtr, param1, TYPE_INT);
 
 	if (!rdPtr->bOpen) {
 		return 0;
 	}
 
-	return ReturnVideoFrame(rdPtr, bHwa, rdPtr->pMemSf, rdPtr->pHwaSf);
+	return ReturnVideoFrame(rdPtr, bWantHWA, rdPtr->pDisplaySf, rdPtr->pReturnSf);
 }
 
 long WINAPI DLLExport Expression_GetGrabbedVideoFramePointer(LPRDATA rdPtr,long param1) {
 	size_t ms = (size_t)CNC_GetFirstExpressionParameter(rdPtr, param1, TYPE_INT);
-	bool bHwa = (bool)CNC_GetNextExpressionParameter(rdPtr, param1, TYPE_INT);
+	bool bWantHWA = (bool)CNC_GetNextExpressionParameter(rdPtr, param1, TYPE_INT);
 
 	if (!rdPtr->bOpen) {
 		return 0;
 	}
 
-	InitSurface(rdPtr->pGrabbedFrame, rdPtr->pFFMpeg->get_width(), rdPtr->pFFMpeg->get_height());
+	InitSurface(rdPtr->pGrabbedFrame,
+        rdPtr->pFFMpeg->get_width(), rdPtr->pFFMpeg->get_height(),
+        rdPtr->pFFMpeg->get_copyToTextureState());
 	BlitVideoFrame(rdPtr, ms, rdPtr->pGrabbedFrame);
 	//__SavetoClipBoard(rdPtr->pGrabbedFrame);
 
-	return ReturnVideoFrame(rdPtr, bHwa, rdPtr->pGrabbedFrame, rdPtr->pHwaSf);
+	return ReturnVideoFrame(rdPtr, bWantHWA, rdPtr->pGrabbedFrame, rdPtr->pReturnSf);
 }
 
 long WINAPI DLLExport Expression_GetVideoOpen(LPRDATA rdPtr, long param1) {
@@ -466,6 +488,10 @@ long WINAPI DLLExport Expression_GetAudioOverrideCodecName(LPRDATA rdPtr, long p
 	return (long)rdPtr->pRetStr->c_str();
 }
 
+long WINAPI DLLExport Expression_GetThreadCount(LPRDATA rdPtr, long param1) {
+    return rdPtr->threadCount;
+}
+
 // ----------------------------------------------------------
 // Condition / Action / Expression jump table
 // ----------------------------------------------------------
@@ -503,7 +529,7 @@ short (WINAPI * ActionJumps[])(LPRDATA rdPtr, long param1, long param2) =
 			Action_SetPosition,
 			Action_SetPositionWithFlag,
 
-			Action_SetQueueSize,
+            Action_SetThreadCount,
 
 			Action_SetAccurateSeek,
 
@@ -523,6 +549,8 @@ short (WINAPI * ActionJumps[])(LPRDATA rdPtr, long param1, long param2) =
 			Action_SetOverrideCodec,
 
 			Action_ResetDisplay,
+
+            Action_SetCopyToTexture,
 
 			0
 			};
@@ -551,6 +579,8 @@ long (WINAPI * ExpressionJumps[])(LPRDATA rdPtr, long param) =
 
 			Expression_GetVideoOverrideCodecName,
 			Expression_GetAudioOverrideCodecName,
+
+            Expression_GetThreadCount,
 
 			0
 			};

@@ -45,6 +45,8 @@
 #include	"ccxhdr.h"
 #include	"Surface.h"
 
+#include	"Macro.h"
+
 #ifdef _OPENMP
 #include	<omp.h>
 #endif
@@ -52,6 +54,15 @@
 #include	<map>
 #include	<string>
 #include	<chrono>
+
+#ifdef COPY_D3D_TEXTURE
+#ifdef _DEBUG
+#include	"D3D/HookD3D.h"
+#endif
+
+#include <d3d11.h>
+#pragma comment(lib, "d3d11.lib")
+#endif
 
 // My lib
 #include	"SDLUtilities.h"
@@ -74,6 +85,11 @@
 #include	"Fusion.h"
 #include	"FusionUtilities.h"
 
+#ifdef COPY_D3D_TEXTURE
+#include	"D3D/D3DHandler.h"
+#endif
+
+#include	"WindowsCommon.h"
 #include	"Func.h"
 
 // Globals and Prototypes

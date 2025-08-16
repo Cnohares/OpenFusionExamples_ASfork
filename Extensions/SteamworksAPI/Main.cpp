@@ -75,6 +75,12 @@ short actionsInfos[]=
 		IDMN_ACTION_GAI, M_ACTION_GAI, ACT_ACTION_GAI, 0, 0,
 
 		IDMN_ACTION_UFL, M_ACTION_UFL, ACT_ACTION_UFL, 0, 1, PARAM_EXPRESSION, M_FRIENDFLAG,
+		
+		IDMN_ACTION_STLT, M_ACTION_STLT, ACT_ACTION_STLT, 0, 2, PARAM_EXPSTRING, PARAM_EXPRESSION, M_TLDESCRIPTION, M_TLTIMEDELTA,
+		IDMN_ACTION_CTLT, M_ACTION_CTLT, ACT_ACTION_CTLT, 0, 1, PARAM_EXPRESSION, M_TLTIMEDELTA,
+		IDMN_ACTION_STLGM, M_ACTION_STLGM, ACT_ACTION_STLGM, 0, 1, PARAM_EXPRESSION, M_TLGAMEMODE,
+		IDMN_ACTION_ATLE, M_ACTION_ATLE, ACT_ACTION_ATLE, 0, 7, PARAM_EXPSTRING, PARAM_EXPSTRING, PARAM_EXPSTRING, PARAM_EXPRESSION, PARAM_EXPRESSION, PARAM_EXPRESSION, PARAM_EXPRESSION, M_TLICON, M_TLTITLE, M_TLDESCRIPTION, M_TLPRIORITY, M_TLTIMEDELTA, M_TLDURATION, M_TLPOSSIBLECLIP,
+
 
 		};
 
@@ -474,6 +480,59 @@ short WINAPI DLLExport Action_UpdateFriendList(LPRDATA rdPtr, long param1, long 
 	return 0;
 }
 
+short WINAPI DLLExport Action_SetTimelineTooltip(LPRDATA rdPtr, long param1, long param2) {
+	const auto pDescription = (LPCWSTR)CNC_GetStringParameter(rdPtr);
+	const auto flTimeDelta = GetFloatParam(rdPtr);
+
+	rdPtr->pData->GetSteamUtilities([&] (const SteamUtilities* pSteamUtil) {
+		pSteamUtil->GetSteamGameRecord()->SetTimelineTooltip(ConvertWStrToStr(pDescription).c_str(),
+			flTimeDelta);
+	});
+
+	return 0;
+}
+
+short WINAPI DLLExport Action_ClearTimelineTooltip(LPRDATA rdPtr, long param1, long param2) {
+	const auto flTimeDelta = GetFloatParam(rdPtr);
+
+	rdPtr->pData->GetSteamUtilities([&] (const SteamUtilities* pSteamUtil) {
+		pSteamUtil->GetSteamGameRecord()->ClearTimelineTooltip(flTimeDelta);
+	});
+
+	return 0;
+}
+
+short WINAPI DLLExport Action_SetTimelineGameMode(LPRDATA rdPtr, long param1, long param2) {
+	const auto gameMode = (ETimelineGameMode)CNC_GetIntParameter(rdPtr);
+
+	rdPtr->pData->GetSteamUtilities([&] (const SteamUtilities* pSteamUtil) {
+		pSteamUtil->GetSteamGameRecord()->SetTimelineGameMode(gameMode);
+	});
+
+	return 0;
+}
+
+short WINAPI DLLExport Action_AddTimelineEvent(LPRDATA rdPtr, long param1, long param2) {
+	const auto pICon = (LPCWSTR)CNC_GetStringParameter(rdPtr);
+	const auto pTitle = (LPCWSTR)CNC_GetStringParameter(rdPtr);
+	const auto pDescription = (LPCWSTR)CNC_GetStringParameter(rdPtr);
+	const auto unPriority = (uint32)CNC_GetIntParameter(rdPtr);
+	const auto flStartOffsetSeconds = GetFloatParam(rdPtr);
+	const auto flDurationSeconds = GetFloatParam(rdPtr);
+	const auto ePossibleClip = (ETimelineEventClipPriority)CNC_GetIntParameter(rdPtr);
+
+	rdPtr->pData->GetSteamUtilities([&] (const SteamUtilities* pSteamUtil) {
+        pSteamUtil->GetSteamGameRecord()->AddTimelineEvent(
+            ConvertWStrToStr(pTitle).c_str(),
+            ConvertWStrToStr(pDescription).c_str(),
+            ConvertWStrToStr(pICon).c_str(),
+            unPriority, flStartOffsetSeconds, flDurationSeconds,
+            ePossibleClip);
+    });
+
+	return 0;
+}
+
 // ============================================================================
 //
 // EXPRESSIONS ROUTINES
@@ -846,6 +905,11 @@ short (WINAPI * ActionJumps[])(LPRDATA rdPtr, long param1, long param2) =
 			Action_GetAllItems,
 
 			Action_UpdateFriendList,
+
+			Action_SetTimelineTooltip,
+			Action_ClearTimelineTooltip,
+			Action_SetTimelineGameMode,
+			Action_AddTimelineEvent,
 
 			0
 			};

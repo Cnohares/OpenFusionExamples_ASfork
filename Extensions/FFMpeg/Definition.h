@@ -55,10 +55,15 @@ struct MemVideoLib {
 	}
 };
 
+struct D3DSharedHandler;
+struct D3DLocalHandler;
+
 struct GlobalData {
 	std::vector<FFMpeg**> ppFFMpegs_record;
 	MemVideoLib* pMemVideoLib = nullptr;
 	AudioInterface* pAI = nullptr;
+
+    D3DSharedHandler* pD3DSharedHandler = nullptr;
 
 	GlobalData() {
 		pMemVideoLib = new MemVideoLib();

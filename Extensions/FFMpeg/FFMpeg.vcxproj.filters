@@ -26,6 +26,21 @@
     <Filter Include="AudioInterface">
       <UniqueIdentifier>{4e0f1015-303b-41c2-95eb-48b3ed675afc}</UniqueIdentifier>
     </Filter>
+    <Filter Include="D3D">
+      <UniqueIdentifier>{13fac545-32c1-43b3-b417-518b6976cee5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shader">
+      <UniqueIdentifier>{e58258cf-c804-49d2-a9cb-34cd768a28fa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shader\PixelShader">
+      <UniqueIdentifier>{d01729ae-3a10-43ae-992f-086232685c25}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shader\VertexShader">
+      <UniqueIdentifier>{c1600f4e-b08c-4add-beef-01c5f0d8504d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="FFMpeg\FFMpegAdapter">
+      <UniqueIdentifier>{d7eaa09a-3da4-4a2b-bf4e-0e6489b384da}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Edittime.cpp">
@@ -42,6 +57,18 @@
     </ClCompile>
     <ClCompile Include="..\_DeLib\Encryption.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="D3D\HookD3D.cpp">
+      <Filter>D3D</Filter>
+    </ClCompile>
+    <ClCompile Include="..\_3rdLib\FFMpeg.cpp">
+      <Filter>FFMpeg</Filter>
+    </ClCompile>
+    <ClCompile Include="..\_3rdLib\FFMpegAdapterD3D11.cpp">
+      <Filter>FFMpeg\FFMpegAdapter</Filter>
+    </ClCompile>
+    <ClCompile Include="..\_3rdLib\FFMpegAdapter.cpp">
+      <Filter>FFMpeg\FFMpegAdapter</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -175,6 +202,24 @@
     <ClInclude Include="SDL_Interface.h">
       <Filter>AudioInterface</Filter>
     </ClInclude>
+    <ClInclude Include="D3D\HookD3D.h">
+      <Filter>D3D</Filter>
+    </ClInclude>
+    <ClInclude Include="Macro.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="D3D\D3DHandler.h">
+      <Filter>D3D</Filter>
+    </ClInclude>
+    <ClInclude Include="..\_3rdLib\FFMpegAdapter.h">
+      <Filter>FFMpeg\FFMpegAdapter</Filter>
+    </ClInclude>
+    <ClInclude Include="..\_3rdLib\FFMpegAdapterD3D11.h">
+      <Filter>FFMpeg\FFMpegAdapter</Filter>
+    </ClInclude>
+    <ClInclude Include="..\_3rdLib\FFMpegDefinition.h">
+      <Filter>FFMpeg</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="EXTICON.BMP">
@@ -188,5 +233,16 @@
     <CustomBuild Include="..\Help\ExtSdk.chm">
       <Filter>Information</Filter>
     </CustomBuild>
+    <CustomBuild Include="Shader\PS.hlsl">
+      <Filter>Shader\PixelShader</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="Shader\YUVToBGRA.hlsl">
+      <Filter>Shader\PixelShader</Filter>
+    </FxCompile>
+    <FxCompile Include="Shader\vs.hlsl">
+      <Filter>Shader\VertexShader</Filter>
+    </FxCompile>
   </ItemGroup>
 </Project>

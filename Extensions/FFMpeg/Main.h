@@ -32,7 +32,7 @@
 #define	ACT_ACTION_SP					6
 #define	ACT_ACTION_SPWF					7
 
-#define	ACT_ACTION_SQS					8
+#define	ACT_ACTION_STC					8
 
 #define	ACT_ACTION_SAS					9
 
@@ -53,7 +53,9 @@
 
 #define	ACT_ACTION_RD					18
 
-#define	ACT_LAST						19
+#define	ACT_ACTION_SCTT					19
+
+#define	ACT_LAST						20
 
 // -------------------------------
 // DEFINITION OF EXPRESSIONS CODES
@@ -81,7 +83,9 @@
 #define EXP_EXPRESSION_GVOCN	 		14
 #define EXP_EXPRESSION_GAOCN	 		15
 
-#define	EXP_LAST                    	16
+#define EXP_EXPRESSION_GTC		 		16
+
+#define	EXP_LAST                    	17
 
 // ---------------------
 // OBJECT DATA STRUCTURE 
@@ -104,7 +108,7 @@ typedef struct tagEDATA_V1
 
 	bool bLoop;
 
-	int audioQSize;
+	int threadCount;
 	int videoQSize;
 
 	bool bAccurateSeek;
@@ -112,10 +116,10 @@ typedef struct tagEDATA_V1
 	bool bCache;
 
 	AVHWDeviceType hwDeviceType;
-
 	bool bForceNoAudio;
+    bool bCopyToTexture;
+	bool bSharedHardWareDevice;
 
-	bool bBuffer[2];
 	int buffer[47];
 
 } EDITDATA;
@@ -151,11 +155,11 @@ typedef struct tagRDATA
 	short			sheight;
 
 	// MemSf
-	LPSURFACE pMemSf;	
+	LPSURFACE pDisplaySf;	
 	LPSURFACE pGrabbedFrame;
 
-	// HwaSf
-	LPSURFACE pHwaSf;
+	// convert format to this when return surface
+	LPSURFACE pReturnSf;
 
 	bool bHwa;
 
@@ -166,7 +170,7 @@ typedef struct tagRDATA
 
 	bool bLoop;
 
-	int audioQSize;
+	int threadCount;
 	int videoQSize;
 
 	bool bAccurateSeek;
@@ -184,6 +188,8 @@ typedef struct tagRDATA
 	
 	bool bPm;
 	bool bChanged;
+    bool bPositionSet;
+    bool bResetDisplay;
 
 	double scaleX;
 	double scaleY;
@@ -195,6 +201,9 @@ typedef struct tagRDATA
 
 	AVHWDeviceType hwDeviceType;
 	bool bForceNoAudio;
+    bool bCopyToTexture;
+    bool bSharedHardWareDevice;
+    D3DLocalHandler* pD3DLocalHandler = nullptr;
 
 	std::string* pVideoOverrideCodecName = nullptr;
 	std::string* pAudioOverrideCodecName = nullptr;

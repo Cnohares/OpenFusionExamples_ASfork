@@ -79,10 +79,10 @@ short WINAPI DLLExport CreateRunObject(LPRDATA rdPtr, LPEDATA edPtr, fpcob cobPt
 	//rdPtr->pSf = new cSurface;
 	//rdPtr->pFrame = new cSurface;
 		
-	rdPtr->pMemSf = nullptr;
+	rdPtr->pDisplaySf = nullptr;
 	rdPtr->pGrabbedFrame = nullptr;	
 	
-	rdPtr->pHwaSf = nullptr;
+	rdPtr->pReturnSf = nullptr;
 
 	rdPtr->bHwa = edPtr->bHwa;
 
@@ -98,6 +98,8 @@ short WINAPI DLLExport CreateRunObject(LPRDATA rdPtr, LPEDATA edPtr, fpcob cobPt
 	rdPtr->bPlay = false;
 	rdPtr->bPlayStateUpdated = false;
 
+    rdPtr->threadCount = edPtr->threadCount;
+
 	rdPtr->volume = 100;
 
 	rdPtr->pFFMpeg = nullptr;
@@ -105,8 +107,10 @@ short WINAPI DLLExport CreateRunObject(LPRDATA rdPtr, LPEDATA edPtr, fpcob cobPt
 
 	rdPtr->pEncrypt = nullptr;
 
-	rdPtr->bChanged = true;
-	rdPtr->bPm = PreMulAlpha(rdPtr);
+    rdPtr->bPm = PreMulAlpha(rdPtr);
+    rdPtr->bChanged = true;
+    rdPtr->bPositionSet = false;
+    rdPtr->bResetDisplay = false;
 
 	rdPtr->pRetStr = new std::wstring;
 
@@ -114,6 +118,9 @@ short WINAPI DLLExport CreateRunObject(LPRDATA rdPtr, LPEDATA edPtr, fpcob cobPt
 
 	rdPtr->hwDeviceType = edPtr->hwDeviceType;
 	rdPtr->bForceNoAudio = edPtr->bForceNoAudio;
+    rdPtr->bCopyToTexture = edPtr->bCopyToTexture;
+    rdPtr->bSharedHardWareDevice = edPtr->bSharedHardWareDevice;
+    rdPtr->pD3DLocalHandler = new D3DLocalHandler{ (ID3D11Device*)GetD3DDevice(rdPtr) };
 
 	rdPtr->pVideoOverrideCodecName = new std::string;
 	rdPtr->pAudioOverrideCodecName = new std::string;
@@ -123,6 +130,9 @@ short WINAPI DLLExport CreateRunObject(LPRDATA rdPtr, LPEDATA edPtr, fpcob cobPt
 	if (GetExtUserData() == nullptr) {
 		rdPtr->pData = new GlobalData;
 		SetExtUserData(rdPtr->pData);
+
+        // create it here instead of constructor to solve dependency
+        rdPtr->pData->pD3DSharedHandler = new D3DSharedHandler{ (ID3D11Device*)GetD3DDevice(rdPtr), hInstLib };
 	}
 	else {
 		rdPtr->pData = (GlobalData*)GetExtUserData();
@@ -176,10 +186,10 @@ short WINAPI DLLExport DestroyRunObject(LPRDATA rdPtr, long fast)
 	FreeConsole();
 #endif
 
-	delete rdPtr->pMemSf;	
+	delete rdPtr->pDisplaySf;	
 	delete rdPtr->pGrabbedFrame;
 
-	delete rdPtr->pHwaSf;
+	delete rdPtr->pReturnSf;
 		
 	delete rdPtr->pPreviousTimer;
 
@@ -187,6 +197,8 @@ short WINAPI DLLExport DestroyRunObject(LPRDATA rdPtr, long fast)
 	CloseGeneral(rdPtr);
 
 	delete rdPtr->pFilePath;
+    
+    delete rdPtr->pD3DLocalHandler;
 
 	delete rdPtr->pVideoOverrideCodecName;
 	delete rdPtr->pAudioOverrideCodecName;
@@ -261,15 +273,25 @@ short WINAPI DLLExport HandleRunObject(LPRDATA rdPtr)
 		// update audio pause
 		// only update state, pts is not updated
 		rdPtr->pFFMpeg->set_pause(!rdPtr->bPlay, rdPtr->bPlayStateUpdated);
+
+        // flag should be cancel when pause
+        if (!rdPtr->bPlay && rdPtr->bPlayStateUpdated) {
+            rdPtr->bPositionSet = false;
+        }
+
 		rdPtr->bPlayStateUpdated = false;
 
 		if (!rdPtr->bPlay) { break; }
 #ifdef _LOOPBENCH
 		auto beforeDecode = std::chrono::steady_clock::now();
 #endif
+        // only one frame, do not need to get next frame, as there's no next frame
+        // and finish state won't be updated
+        if (VideoSingleFrame(rdPtr)) { break; }
+        if (rdPtr->bPositionSet) { rdPtr->bPositionSet = false; break; }
 
 		rdPtr->pFFMpeg->get_nextFrame([&] (const unsigned char* pData, const int stride, const int height) {
-			CopyData(pData, stride, rdPtr->pMemSf, rdPtr->bPm);
+            CopyData(rdPtr, rdPtr->pDisplaySf, pData, stride, height);
 			ReDisplay(rdPtr);
 			});
 
@@ -303,8 +325,8 @@ short WINAPI DLLExport HandleRunObject(LPRDATA rdPtr)
 
 	CleanCache(rdPtr, false);
 
-	if (rdPtr->pMemSf != nullptr
-		&& rdPtr->pMemSf->IsValid()
+	if (rdPtr->pDisplaySf != nullptr
+		&& rdPtr->pDisplaySf->IsValid()
 		&& rdPtr->rc.rcChanged) {
 		return REFLAG_DISPLAY;
 	}
@@ -323,7 +345,11 @@ short WINAPI DLLExport DisplayRunObject(LPRDATA rdPtr)
    If you return REFLAG_DISPLAY in HandleRunObject this routine will run.
 */
 
-	if (rdPtr->pMemSf != nullptr && rdPtr->pMemSf->IsValid()) {
+	if (rdPtr->pDisplaySf != nullptr && rdPtr->pDisplaySf->IsValid()) {
+        // handle ResetDisplay
+        if (!GetVideoPlayState(rdPtr) && rdPtr->bResetDisplay) { return 0; }
+        rdPtr->bResetDisplay = false;
+
 		// Begin render process...
 		LPSURFACE ps = WinGetSurface((int)rdPtr->rHo.hoAdRunHeader->rhIdEditWin);
 		//int nDrv = ps->GetDriver();
@@ -336,9 +362,9 @@ short WINAPI DLLExport DisplayRunObject(LPRDATA rdPtr)
 		// Hot spot (transform center)
 		POINT point = { 0, 0 };
 
-		rdPtr->pMemSf->BlitEx(*ps, (float)screenX, (float)screenY,
+		rdPtr->pDisplaySf->BlitEx(*ps, (float)screenX, (float)screenY,
 			rdPtr->rc.rcScaleX, rdPtr->rc.rcScaleY, 0, 0,
-			rdPtr->pMemSf->GetWidth(), rdPtr->pMemSf->GetHeight(), &point, rdPtr->rc.rcAngle,
+			rdPtr->pDisplaySf->GetWidth(), rdPtr->pDisplaySf->GetHeight(), &point, rdPtr->rc.rcAngle,
 			(rdPtr->rs.rsEffect & EFFECTFLAG_TRANSPARENT) ? BMODE_TRANSP : BMODE_OPAQUE,
 			BlitOp(rdPtr->rs.rsEffect & EFFECT_MASK),
 			rdPtr->rs.rsEffectParam, BLTF_ANTIA);
@@ -503,8 +529,11 @@ void WINAPI DLLExport StartApp(mv _far *mV, CRunApp* pApp)
 	// Delete global data (if restarts application)
 	auto pData = (GlobalData*)mV->mvGetExtUserData(pApp, hInstLib);
 	if (pData != NULL) {
-		delete pData;
-		mV->mvSetExtUserData(pApp, hInstLib, NULL);
+        // delete it here instead of destructor to solve dependency
+        delete pData->pD3DSharedHandler;
+        
+        delete pData;
+        mV->mvSetExtUserData(pApp, hInstLib, NULL);
 	}
 }
 
@@ -520,7 +549,10 @@ void WINAPI DLLExport EndApp(mv _far *mV, CRunApp* pApp)
 	// Delete global data
 	auto pData = (GlobalData*)mV->mvGetExtUserData(pApp, hInstLib);
 	if (pData != NULL) {
-		delete pData;
+        // delete it here instead of destructor to solve dependency
+        delete pData->pD3DSharedHandler; 
+        
+        delete pData;
 		mV->mvSetExtUserData(pApp, hInstLib, NULL);
 	}
 }

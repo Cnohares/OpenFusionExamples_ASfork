@@ -484,8 +484,8 @@ int WINAPI DLLExport CreateObject(mv _far *mV, fpLevObj loPtr, LPEDATA edPtr)
 	if ( IS_COMPATIBLE(mV) )
 	{
 		// Set default object settings
-		edPtr->swidth = 32;
-		edPtr->sheight = 32;
+		edPtr->swidth = 150;
+		edPtr->sheight = 16;
 
 		// Default alignment
 		edPtr->dwAlignFlags = DT_LEFT|DT_TOP;
@@ -1078,11 +1078,11 @@ void WINAPI DLLExport SetPropValue(LPMV mV, LPEDATA edPtr, UINT nPropID, LPVOID 
 	//	break;
 		
 	case PROPID_RENDER_BorderOffsetX:
-		edPtr->borderOffsetX = (unsigned short)max(0, ((CPropDWordValue*)pValue)->m_dwValue);
+		edPtr->borderOffsetX = (unsigned short)(std::max)((DWORD)0, ((CPropDWordValue*)pValue)->m_dwValue);
 		mvInvalidateObject(mV, edPtr);
 		break;
 	case PROPID_RENDER_BorderOffsetY:
-		edPtr->borderOffsetY = (unsigned short)max(0, ((CPropDWordValue*)pValue)->m_dwValue);
+        edPtr->borderOffsetY = (unsigned short)(std::max)((DWORD)0, ((CPropDWordValue*)pValue)->m_dwValue);
 		mvInvalidateObject(mV, edPtr);
 		break;
 

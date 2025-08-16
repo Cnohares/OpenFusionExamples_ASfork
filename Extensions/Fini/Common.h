@@ -35,9 +35,7 @@
 #include	"StrNum.h"
 #include	"Base64.h"
 
-#include	"lz4Interface.h"
-#include	"zlibInterface.h"
-#include	"zpaqInterface.h"
+#include	"Compress/zlibInterface.h"
 
 // Specific to this cox
 #include	"resource.h"

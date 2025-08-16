@@ -22,7 +22,7 @@ This object is based on cross platform lib, FFMpeg & SDL, in theory there is not
 
 **NOTE:** this object requires FFMpeg & SDL
 
-FFMpeg: you need to download release (e.g., `ffmpeg-n7.0-latest-win32-lgpl-shared-7.0.zip` ) from <https://github.com/defisym/FFmpeg-Builds-Win32/releases>, then put dlls into Fusion root & `Runtime/Unicode`, or you need to build X86 version from FFMpeg source code, as the official 32 bit support has stopped.
+FFMpeg: you need to download release (e.g., `ffmpeg-n7.1-latest-win32-lgpl-shared-7.1.zip` ) from <https://github.com/defisym/FFmpeg-Builds-Win32/releases>, then put dlls into Fusion root & `Runtime/Unicode`, or you need to build X86 version from FFMpeg source code, as the official 32 bit support has stopped.
 
 SDL: you need to download `SDL2-2.24.0-win32-x86.zip` from <https://github.com/libsdl-org/SDL/releases>, then put X86 dlls into Fusion root & `Runtime/Unicode`
 
@@ -36,6 +36,7 @@ Here follows all dlls needed by this object:
   - avfilter-10.dll
   - avformat-61.dll
   - avutil-59.dll
+  - postproc-58.dll
   - swresample-5.dll
   - swscale-8.dll
 
@@ -63,16 +64,25 @@ Here follows all dlls needed by this object:
     - Currently reading decrypt file didn't use a stream (it's provided by another class and FFMpeg only has a memory reader), so it may cost some time to decrypt. With this on extension will cache these file in memory over frames instead of reloading
   - Force No Audio
     - *Don't play audio and sync with external clock*
+  - Thread Count
+    - *Thread used for decoding, more thread will be faster but use more and memory*
+    - *0 for auto detect, but the actual thread used won't greater than the number of CPU cores.*
 
 - Hardware Decode
+  - Shared Hardware Device
+    - *When decoding, FFMpeg will create a hardware device, and this can be shared by all instances to reduce memory usage and optimize the open speed*
+  - Copy To Texture
+    - *do not copy hardware frame to memory from GPU, then copy to fusion bitmap surface, instead, use the hardware frame directly*
+    - *Only supported in D3D11 mode, when check this, Hardware Device will be set to D3D11VA. In this case, extension will utilize D3D11 pipeline to render the texture directly to fusion HWA surface, which can significantly boost the performance*
   - Hardware Device
     - *set the device you want object to use. object will try using the device you set, if not supported, it will try using other hardware devices. if all devices are not supported, it will fallback to software decode*
-    - *due to fusion limitation, hardware frame needs to be copied to memory from GPU, then copy to fusion surface, so usually it's slower comparing to software decode if you are using modern hardwares*
+    - *due to fusion limitation, by default hardware frame needs to be copied to memory from GPU, then copy to fusion surface, so usually it's slower comparing to software decode if you are using modern hardwares*
 
 ## Action
 
 - Reset Display
-  - *reset display to transparent if video is not playing*
+  - *reset to display nothing if video is not playing (paused or closed), auto recover if continue*
+  - *it's done by skipping the display routine, if you get surface after this you'll still get a frame instead of blank——previously this is achieved by set alpha channel to transparent, while when copy to texture is enabled, the display surface is a render target texture, which do can have alpha channel but ignored when display*
 
 - Open Video
   - *If open failed, extension will keep previous frame*
@@ -121,11 +131,14 @@ Here follows all dlls needed by this object:
 - Set Size
   - *set object size*
 
+- Set Thread Count
+  - *see Properties->Thread Count*
 - Set Override Codec
   - *Force to use given codec. E.g., use `libvpx-vp9` to enable `WebM` alpha support*
   - *if given codec is invalid or cannot open video. extension will reset to default then try again. If the error still exists, `On Video Open Failed` will be triggered*
   - *supported codecs: see Appendix*
 - Set Hardware Decode Device
+  - *if not D3D11VA, Copy To Texture will be set to false*
   - *see Properties->Hardware Decode Device and the table below*
 
 | Device Name  | AVHWDeviceType                |
@@ -143,6 +156,10 @@ Here follows all dlls needed by this object:
 | MEDIACODEC   | AV_HWDEVICE_TYPE_MEDIACODEC   |
 | VULKAN       | AV_HWDEVICE_TYPE_VULKAN       |
 | D3D12VA      | AV_HWDEVICE_TYPE_D3D12VA      |
+
+- Set Copy To Texture
+  - *if true, Set Hardware Decode Device will be set to D3D11VA*
+  - *see Properties->Copy To Texture*
 
 - Cache Video
   - *decrypt given file then cache it in memory*
@@ -187,6 +204,7 @@ Here follows all dlls needed by this object:
   - *You can get the cSurface pointer of current frame / frame with given time stamp. Pass it to another extension then do anything you like.*
   - *Note the target extension should build in /MD, aka use the same heap. Or it may crash due to access violation. See: <https://learn.microsoft.com/en-us/cpp/build/reference/md-mt-ld-use-run-time-library?view=msvc-170>*
 
+- Get Thread Count
 - Get Video Override Codec Name
 - Get Audio Override Codec Name
 

@@ -31,8 +31,8 @@
 
 #define	IDS_PROP_QUEUE_TEXTTITLE    				207
 
-#define	IDS_PROP_AUDIOQUEUESIZE_EDITNUMBER    				208
-#define	IDS_PROP_AUDIOQUEUESIZE_EDITNUMBER_INFO    			209
+#define	IDS_PROP_THREADCOUNT_EDITNUMBER    				    208
+#define	IDS_PROP_THREADCOUNT_EDITNUMBER_INFO    			209
 #define	IDS_PROP_VIDEOQUEUESIZE_EDITNUMBER    				210
 #define	IDS_PROP_VIDEOQUEUESIZE_EDITNUMBER_INFO    			211
 
@@ -64,10 +64,22 @@
 #define	IDS_PROP_FORCENOAUDIO_CHECK						240
 #define	IDS_PROP_FORCENOAUDIO_CHECK_INFO    			241
 
+#define	IDS_PROP_HWDECODE_COPY_TO_TEXTURE_CHECK			242
+#define	IDS_PROP_HWDECODE_COPY_TO_TEXTURE_CHECK_INFO    243
+
+#define	IDS_PROP_HWDECODE_SHARED_HARDWARE_DEVICE_CHECK			244
+#define	IDS_PROP_HWDECODE_SHARED_HARDWARE_DEVICE_CHECK_INFO    	245
+
 
 // 	Debug tree
 //-------------------
 #define	IDS_SEPARATOR   				300
+
+// 	Shader
+//-------------------
+#define SHADER_VS_TEMPLATE              400
+#define SHADER_PS_TEMPLATE              401
+#define SHADER_PS_YUVToBGRA             402
 
 // 	Actions
 //-------------------
@@ -86,7 +98,7 @@
 #define	IDMN_ACTION_SP				25006
 #define	IDMN_ACTION_SPWF			25007
 
-#define	IDMN_ACTION_SQS 			25008
+#define	IDMN_ACTION_STC 			25008
 
 #define	IDMN_ACTION_SAS 			25009
 
@@ -107,6 +119,8 @@
 
 #define IDMN_ACTION_RD     			25018
 
+#define IDMN_ACTION_SCTT   			25019
+
 // Action strings
 #define M_ACTION_OV	       		    5000
 #define	M_ACTION_CV				    5001
@@ -118,7 +132,7 @@
 #define	M_ACTION_SP				    5006
 #define	M_ACTION_SPWF				5007
 
-#define	M_ACTION_SQS				5008
+#define	M_ACTION_STC				5008
 
 #define	M_ACTION_SAS				5009
 
@@ -139,6 +153,8 @@
 
 #define M_ACTION_RD     		    5018
 
+#define M_ACTION_SCTT     		    5019
+
 // Titles of action parameters
 #define M_FILEPATH				 5501
 #define M_KEY   				 5502
@@ -147,7 +163,7 @@
 #define M_POSITION				 5505
 #define M_POSITION_WF			 5506
 #define M_FLAGS				     5507
-#define M_AUDIOQUEUESIZE		 5508
+#define M_THEADCOUNT			 5508
 #define M_VIDEOQUEUESIZE	     5509
 #define M_ACCURATESEEK		     5510
 #define M_HWDECODEDEVICE		 5511
@@ -157,6 +173,7 @@
 #define M_FORCENOAUDIO	         5515
 #define M_VCODEC				 5516
 #define M_ACODEC				 5517
+#define M_COPYTOTEXTURE			 5518
 
 
 //	Conditions
@@ -224,6 +241,8 @@
 #define IDMN_EXPRESSION_GVOCN     		27014
 #define IDMN_EXPRESSION_GAOCN     		27015
 
+#define IDMN_EXPRESSION_GTC     		27016
+
 // Expression strings
 #define	M_EXPRESSION_GVN			    7000
 #define M_EXPRESSION_GVP			    7001
@@ -247,6 +266,8 @@
 
 #define M_EXPRESSION_GVOCN     			7014
 #define M_EXPRESSION_GAOCN     			7015
+
+#define M_EXPRESSION_GTC     			7016
 
 // Names of expression parameters
 #define M_HWA   				 7500

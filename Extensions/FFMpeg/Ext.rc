@@ -1,6 +1,7 @@
 //Microsoft Developer Studio generated resource script.
 //
 #include "resource.h"
+#include "Macro.h"
 
 #define APSTUDIO_READONLY_SYMBOLS
 /////////////////////////////////////////////////////////////////////////////
@@ -103,6 +104,17 @@ EXO_IMAGE               BITMAP  MOVEABLE PURE   "RES\\EXTIMG.BMP"
 
 /////////////////////////////////////////////////////////////////////////////
 //
+// Shader
+//
+
+#ifndef PRE_COMPILE_SHADER
+SHADER_VS_TEMPLATE      RCDATA    "Shader\\VS.hlsl"
+SHADER_PS_TEMPLATE      RCDATA    "Shader\\PS.hlsl"
+SHADER_PS_YUVToBGRA     RCDATA    "Shader\\YUVToBGRA.hlsl"
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+//
 // Menu
 //
 
@@ -160,9 +172,10 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "Set Size", IDMN_ACTION_STRETCH
         MENUITEM SEPARATOR
-        //MENUITEM "Set Queue Size",          IDMN_ACTION_SQS
+        MENUITEM "Set Thread Count", IDMN_ACTION_STC
         MENUITEM "Set Override Codec", IDMN_ACTION_SOC
         MENUITEM "Set Hardware Decode Device", IDMN_ACTION_SHDE
+        MENUITEM "Set Copy To Texture", IDMN_ACTION_SCTT
         MENUITEM SEPARATOR
         MENUITEM "Cache Video",             IDMN_ACTION_CACHEV
         MENUITEM "Erase Cached Video",      IDMN_ACTION_ERASEV
@@ -196,6 +209,7 @@ BEGIN
         MENUITEM "Get Current Video Frame Pointer", IDMN_EXPRESSION_GCVFP
         MENUITEM "Get Grabbed Video Frame Pointer", IDMN_EXPRESSION_GGVFP        
         MENUITEM SEPARATOR
+        MENUITEM "Get Thread Count", IDMN_EXPRESSION_GTC     
         MENUITEM "Get Video Override Codec Name", IDMN_EXPRESSION_GVOCN         
         MENUITEM "Get Audio Override Codec Name", IDMN_EXPRESSION_GAOCN         
         MENUITEM SEPARATOR
@@ -292,8 +306,8 @@ IDS_PROP_PLAYAFTERLOAD_CHECK_INFO       "Auto start play when a file is loaded"
 IDS_PROP_LOOP_CHECK                     "Loop"
 IDS_PROP_LOOP_CHECK_INFO    		    "Loop video"
 IDS_PROP_QUEUE_TEXTTITLE    			"Queue"
-IDS_PROP_AUDIOQUEUESIZE_EDITNUMBER    	"Audio queue size"
-IDS_PROP_AUDIOQUEUESIZE_EDITNUMBER_INFO "Data size cached in audio queue, if you encounter playback issues, try set this larger"
+IDS_PROP_THREADCOUNT_EDITNUMBER    	    "Thread Count"
+IDS_PROP_THREADCOUNT_EDITNUMBER_INFO    "Thread used for decoding, more thread will be faster but use more and memory.\n0 for auto detect, but the actual thread used won't greater than the number of CPU cores"
 IDS_PROP_VIDEOQUEUESIZE_EDITNUMBER    	"Video queue size"
 IDS_PROP_VIDEOQUEUESIZE_EDITNUMBER_INFO "Data size cached in video queue, if you encounter playback issues, try set this larger"
 
@@ -325,6 +339,12 @@ COMBO_AV_HWDEVICE_TYPE_D3D12VA                "D3D12VA"
 IDS_PROP_FORCENOAUDIO_CHECK            "Force No Audio"
 IDS_PROP_FORCENOAUDIO_CHECK_INFO       "Don't play audio and sync with external clock"
 
+IDS_PROP_HWDECODE_SHARED_HARDWARE_DEVICE_CHECK			"Shared Hardware Device"
+IDS_PROP_HWDECODE_SHARED_HARDWARE_DEVICE_CHECK_INFO   	"All instances with the same hardware device type will share the same hardware device.\nMinimize the memory usage."
+
+IDS_PROP_HWDECODE_COPY_TO_TEXTURE_CHECK         "Copy To Texture"
+IDS_PROP_HWDECODE_COPY_TO_TEXTURE_CHECK_INFO    "Copy hardware decode result to texture directly instead of convert to bitmap first.\nHardware device will be forced to D3D11VA to match Fusion runtime."
+
 END
 
 STRINGTABLE DISCARDABLE 
@@ -348,7 +368,7 @@ BEGIN
     M_ACTION_SP			       "Set Video Position to %0"
     M_ACTION_SPWF		       "Set Video Position to %0 With Flag %1"
     
-    M_ACTION_SQS		       "Set Audio Queue Size to %0, Video Queue Size to %1"
+    M_ACTION_STC		       "Set Thread Count to %0"
     
     M_ACTION_SAS		       "Set Accurate Seek to %0"
     
@@ -356,6 +376,7 @@ BEGIN
     M_ACTION_ERASEV		       "Erase Cached Video %0"
     
     M_ACTION_SHDE		       "Set Hardware Decode Device to %0"
+    M_ACTION_SCTT		       "Set Copy To Texture to %0"
     
     M_ACTION_STRETCH	       "Set Size to Width = %0, Height = %1"
 
@@ -372,7 +393,7 @@ BEGIN
     M_POSITION                 "Position (ms)"
     M_POSITION_WF              "Position, Depend on flag"
     M_FLAGS                    "Seek Flag, 1 = Backward, 2 = Byte, 4 = Any, 8 = Frame"
-    M_AUDIOQUEUESIZE           "Audio Queue Size"
+    M_THEADCOUNT           	   "Thread Count, 0 = Auto Detect"
     M_VIDEOQUEUESIZE           "Video Queue Size"
     M_ACCURATESEEK             "Accurate Seek"
     M_HWDECODEDEVICE           "Hardware Decode Device"    
@@ -382,6 +403,7 @@ BEGIN
     M_FORCENOAUDIO             "Force No Audio, 0 = Disable"
     M_VCODEC                   "Video Codec"
     M_ACODEC                   "Audio Codec"
+	M_COPYTOTEXTURE			   "Copy To Texture"
 END
 
 STRINGTABLE DISCARDABLE
@@ -422,6 +444,8 @@ BEGIN
     
     M_EXPRESSION_GVOCN 	    "GVOCN$ ("
     M_EXPRESSION_GAOCN 	    "GAOCN$ ("
+
+    M_EXPRESSION_GTC 	    "GTC ("
 
     M_HWA                   "Return HWA"
 END

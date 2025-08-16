@@ -42,12 +42,14 @@ enum {
 
 	PROPID_QUEUE_TEXTTITLE,
 
-	PROPID_AUDIOQUEUESIZE_EDITNUMBER,
+	PROPID_THREADCOUNT_EDITNUMBER,
 	PROPID_VIDEOQUEUESIZE_EDITNUMBER,
 
 	PROPID_HWDECODE_TEXTTITLE,
 
-	PROPID_HWDECODE_DEVICE_COMBO,
+	PROPID_HWDECODE_SHARED_HARDWARE_DEVICE,
+    PROPID_HWDECODE_COPY_TO_TEXTURE,
+    PROPID_HWDECODE_DEVICE_COMBO,
 };
 
 // Example of content of the PROPID_COMBO combo box
@@ -108,12 +110,15 @@ PropData Properties[] = {
 
 	//PropData_Group(PROPID_QUEUE_TEXTTITLE, IDS_PROP_QUEUE_TEXTTITLE, IDS_PROP_QUEUE_TEXTTITLE),
 
-	//PropData_EditNumber(PROPID_AUDIOQUEUESIZE_EDITNUMBER, IDS_PROP_AUDIOQUEUESIZE_EDITNUMBER, IDS_PROP_AUDIOQUEUESIZE_EDITNUMBER_INFO),
+	PropData_EditNumber(PROPID_THREADCOUNT_EDITNUMBER, IDS_PROP_THREADCOUNT_EDITNUMBER, IDS_PROP_THREADCOUNT_EDITNUMBER_INFO),
 	//PropData_EditNumber(PROPID_VIDEOQUEUESIZE_EDITNUMBER, IDS_PROP_VIDEOQUEUESIZE_EDITNUMBER, IDS_PROP_VIDEOQUEUESIZE_EDITNUMBER_INFO),
 
 	PropData_Group(PROPID_HWDECODE_TEXTTITLE, IDS_PROP_HWDECODE_TEXTTITLE, IDS_PROP_HWDECODE_TEXTTITLE),
-
-	PropData_ComboBox(PROPID_HWDECODE_DEVICE_COMBO,	IDS_PROP_HWDECODE_DEVICE_COMBO,	IDS_PROP_HWDECODE_DEVICE_COMBO_INFO, HWDecode_ComboList),
+    
+	PropData_CheckBox(PROPID_HWDECODE_SHARED_HARDWARE_DEVICE, IDS_PROP_HWDECODE_SHARED_HARDWARE_DEVICE_CHECK, IDS_PROP_HWDECODE_SHARED_HARDWARE_DEVICE_CHECK_INFO),
+    PropData_CheckBox(PROPID_HWDECODE_COPY_TO_TEXTURE, IDS_PROP_HWDECODE_COPY_TO_TEXTURE_CHECK, IDS_PROP_HWDECODE_COPY_TO_TEXTURE_CHECK_INFO),
+	
+    PropData_ComboBox(PROPID_HWDECODE_DEVICE_COMBO,	IDS_PROP_HWDECODE_DEVICE_COMBO,	IDS_PROP_HWDECODE_DEVICE_COMBO_INFO, HWDecode_ComboList),
 
 	// End of table (required)
 	PropData_End()
@@ -400,8 +405,8 @@ int WINAPI DLLExport CreateObject(mv _far *mV, fpLevObj loPtr, LPEDATA edPtr)
 
 		edPtr->bLoop = true;
 
-		edPtr->audioQSize = MAX_AUDIOQ_SIZE;
 		edPtr->videoQSize = MAX_VIDEOQ_SIZE;
+		edPtr->threadCount = 0;
 
 		edPtr->bAccurateSeek = true;
 
@@ -410,6 +415,8 @@ int WINAPI DLLExport CreateObject(mv _far *mV, fpLevObj loPtr, LPEDATA edPtr)
 		edPtr->hwDeviceType= (AVHWDeviceType)AV_HWDEVICE_TYPE_NONE;
 
 		edPtr->bForceNoAudio = false;
+        edPtr->bCopyToTexture = false;
+        edPtr->bSharedHardWareDevice = false;
 
 		SDL_UpdateAppProp(mV, edPtr);
 
@@ -790,8 +797,8 @@ LPVOID WINAPI DLLExport GetPropValue(LPMV mV, LPEDATA edPtr, UINT nPropID)
 //	}
 
 	switch (nPropID) {
-	case PROPID_AUDIOQUEUESIZE_EDITNUMBER:
-		 return new CPropDWordValue(edPtr->audioQSize);
+	case PROPID_THREADCOUNT_EDITNUMBER:
+		 return new CPropDWordValue(edPtr->threadCount);
 	case PROPID_VIDEOQUEUESIZE_EDITNUMBER:
 		return new CPropDWordValue(edPtr->videoQSize);
 
@@ -824,6 +831,11 @@ BOOL WINAPI DLLExport GetPropCheck(LPMV mV, LPEDATA edPtr, UINT nPropID)
 		return edPtr->bCache;
 	case PROPID_CACHE_FORCENOAUDIO:
 		return edPtr->bForceNoAudio;
+
+	case PROPID_HWDECODE_SHARED_HARDWARE_DEVICE:
+		return edPtr->bSharedHardWareDevice;
+	case PROPID_HWDECODE_COPY_TO_TEXTURE:
+        return edPtr->bCopyToTexture;	
 	}
 
 #endif // !defined(RUN_ONLY)
@@ -887,11 +899,11 @@ void WINAPI DLLExport SetPropValue(LPMV mV, LPEDATA edPtr, UINT nPropID, LPVOID 
 //	}
 
 	switch (nPropID) {
-	case PROPID_AUDIOQUEUESIZE_EDITNUMBER:
-		edPtr->audioQSize = max(0, ((CPropDWordValue*)pValue)->m_dwValue);
+	case PROPID_THREADCOUNT_EDITNUMBER:
+		edPtr->threadCount = (int)(std::max)((DWORD)0, ((CPropDWordValue*)pValue)->m_dwValue);
 		break;
 	case PROPID_VIDEOQUEUESIZE_EDITNUMBER:
-		edPtr->videoQSize = max(0, ((CPropDWordValue*)pValue)->m_dwValue);
+		edPtr->videoQSize = (int)(std::max)((DWORD)0, ((CPropDWordValue*)pValue)->m_dwValue);
 		break;
 
 	case PROPID_HWDECODE_DEVICE_COMBO:
@@ -946,6 +958,17 @@ void WINAPI DLLExport SetPropCheck(LPMV mV, LPEDATA edPtr, UINT nPropID, BOOL nC
 		mvInvalidateObject(mV, edPtr);
 		mvRefreshProp(mV, edPtr, PROPID_CACHE_FORCENOAUDIO, TRUE);
 		break;
+
+	case PROPID_HWDECODE_SHARED_HARDWARE_DEVICE:
+		edPtr->bSharedHardWareDevice = nCheck;
+		break;
+    case PROPID_HWDECODE_COPY_TO_TEXTURE:
+        edPtr->bCopyToTexture = nCheck;
+        edPtr->hwDeviceType = (AVHWDeviceType)AV_HWDEVICE_TYPE_D3D11VA;
+        mvInvalidateObject(mV, edPtr);
+        mvRefreshProp(mV, edPtr, PROPID_HWDECODE_COPY_TO_TEXTURE, TRUE);
+        mvRefreshProp(mV, edPtr, PROPID_HWDECODE_DEVICE_COMBO, TRUE);
+        break;
 	}
 #endif // !defined(RUN_ONLY)
 }
@@ -981,15 +1004,10 @@ BOOL WINAPI DLLExport EditProp(LPMV mV, LPEDATA edPtr, UINT nPropID)
 BOOL WINAPI IsPropEnabled(LPMV mV, LPEDATA edPtr, UINT nPropID)
 {
 #ifndef RUN_ONLY
-	// Example
-	// -------
-/*
 	switch (nPropID) {
-
-	case PROPID_CHECK:
-		return (edPtr->nComboIndex != 0);
+    case PROPID_HWDECODE_DEVICE_COMBO:
+		return (!edPtr->bCopyToTexture);
 	}
-*/
 #endif // !defined(RUN_ONLY)
 	return TRUE;
 }

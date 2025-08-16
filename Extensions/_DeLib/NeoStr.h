@@ -229,7 +229,7 @@ private:
 	bool bChildShake = false;
 
 	unsigned short shakeTimer = 0;
-	RandGenerator<int>* pShakeRandGen = nullptr;
+	RandGenerator* pShakeRandGen = nullptr;
 
 	enum class ShakeType {
 		ShakeType_None = 0,
@@ -1112,7 +1112,7 @@ public:
 		this->shakeFormat.reserve(DEFAULT_FORMAT_RESERVE);
 		this->shakeStack.reserve(DEFAULT_FORMAT_RESERVE);
 
-		this->pShakeRandGen = new RandGenerator<int>(-1 * SHAKE_RANDOM_RANGE, SHAKE_RANDOM_RANGE);
+		this->pShakeRandGen = new RandGenerator(-1 * SHAKE_RANDOM_RANGE, SHAKE_RANDOM_RANGE);
 
 #ifdef MEASURE_GDI_PLUS		
 		this->pMeasure = new Graphics(hdc);
@@ -1492,8 +1492,8 @@ public:
 			break;
 		}
 		case ShakeType::ShakeType_Random: {
-			const auto randomX = this->pShakeRandGen->GenerateRandNumber() / (1.0 * SHAKE_RANDOM_RANGE);
-			const auto randomY = this->pShakeRandGen->GenerateRandNumber() / (1.0 * SHAKE_RANDOM_RANGE);
+			const auto randomX = this->pShakeRandGen->Generate() / (1.0 * SHAKE_RANDOM_RANGE);
+			const auto randomY = this->pShakeRandGen->Generate() / (1.0 * SHAKE_RANDOM_RANGE);
 
 			const auto wa = shakeControl.amplitude * charSz->width;
 			const auto ha = shakeControl.amplitude * charSz->height;
@@ -1959,8 +1959,8 @@ public:
 		//	ICon Resample, 1 = Enable, 0 = Disable
 		//	! = reset to default
 		// 
-		// [Align = LEFT]
-		//  change align of different lines
+		// [Align = DT_LEFT]
+		//  change align of different lines, DT_LEFT = 0, DT_CENTER = 1, DT_RIGHT = 2
 		//
 		// [CharOffsetX = 0.0][/CharOffsetX]
 		//  Char Offset X
@@ -2449,7 +2449,7 @@ public:
 						// new element, call callback to update the one copied from last one
 						// parse params there
 						// or end of region, pop the stack, then update it
-						auto StackManager = [&] (auto& stack, auto& format, auto callBack) {
+						auto StackManager = [&] (auto& stack, auto& format, const auto& callBack) {
 							if (!bEndOfRegion) {
 								// clone one here
 								std::remove_reference_t<decltype(stack[0])> newFormat = stack.back();
@@ -2848,11 +2848,12 @@ public:
 									return;
 								}
 
-								memset(newLogFont.lfFaceName, 0
-									, LF_FACESIZE * sizeof(WCHAR));
-								memcpy(newLogFont.lfFaceName, controlParam.data()
-									, min(LF_FACESIZE, controlParam.size()) * sizeof(WCHAR));
-								});
+                                memset(newLogFont.lfFaceName, 0,
+                                    LF_FACESIZE * sizeof(WCHAR));
+                                memcpy(newLogFont.lfFaceName, controlParam.data(),
+                                    (std::min)(static_cast<size_t>(LF_FACESIZE),
+                                    controlParam.size()) * sizeof(WCHAR));
+                                });
 
 							break;
 						}
@@ -3162,7 +3163,7 @@ public:
 				auto curChar = pCurChar[0];
 				auto nextChar = pCurChar[1];
 
-				fontItHandler.ForwardWithNewLine(pChar, [&] (auto fontIt) {
+				fontItHandler.ForwardWithNewLine(pChar, [&] (const auto& fontIt) {
 					localLogFont = fontIt->logFont;
 				});
 
@@ -3216,7 +3217,7 @@ public:
 				auto charSz = &pCharSizeArr[pChar];
 
 				curWidth += charSz->width;
-				curHeight = max(curHeight, charSz->height);
+				curHeight = (std::max)(curHeight, charSz->height);
 
 				bNewLineHandled = false;
 
@@ -3368,7 +3369,7 @@ public:
 				std::wstring strEscaped(pText + pChar);
 #endif // _DEBUG
 
-				auto end = min(pChar, pTextLen) - 2 * newLine;
+				auto end = (std::min)(pChar, pTextLen) - 2 * newLine;
 				
 				if (end <= pCharStart) {
 					end = pCharStart;
@@ -3392,7 +3393,7 @@ public:
 #endif // _DEBUG
 
 				maxWidth = curWidth != 0
-					? max(maxWidth, curWidth - nColSpace)
+					? (std::max)(maxWidth, curWidth - nColSpace)
 					: maxWidth;
 			}
 
@@ -3714,9 +3715,13 @@ public:
 		// non-stack based
 		auto triggerItHandler = IteratorHandler(this->triggerFormat);
 
-		auto tagCallbackHandler = [&] (auto tagIt) {
+		auto tagCallbackHandler = [&] (const auto& tagIt) {
 			if (opt.tagCallback == nullptr) { return; }
-			if (tagIt->rawStart <= opt.tagCallbackIndex) { return; }
+            if (tagIt->rawStart <= opt.tagCallbackIndex
+                // fix tag at start cannot be triggered
+                && opt.tagCallbackIndex != 0) {
+                return;
+            }
 
 			opt.tagCallback(tagIt->callbackName, tagIt->callbackParams);
 		};
@@ -3810,7 +3815,7 @@ public:
 				// ---------
 
 				// stack based
-				alignItHandler.Forward(totalChar, [&] (auto alignIt) {
+				alignItHandler.Forward(totalChar, [&] (const auto& alignIt) {
 					formatAlign = alignIt->dwDTFlags;
 				});
 
@@ -3835,7 +3840,7 @@ public:
 					// ---------
 
 					// stack based
-					charOffsetItHandler.Forward(totalChar, [&] (auto charPosIt) {
+					charOffsetItHandler.Forward(totalChar, [&] (const auto& charPosIt) {
 						charOffsetDisplay = charPosIt->charOffsetDisplay;
 					});
 
@@ -3871,13 +3876,13 @@ public:
 					// ---------
 
 					// stack based
-					colorItHandler.Forward(totalChar, [&] (auto colorIt) {
+					colorItHandler.Forward(totalChar, [&] (const auto& colorIt) {
 						solidBrush.SetColor(colorIt->color);
 					});
-					fontItHandler.Forward(totalChar, [&] (auto fontIt) {
+					fontItHandler.Forward(totalChar, [&] (const auto& fontIt) {
 						this->pFont = GetFontPointerWithCache(fontIt->logFont);
 					});
-					shakeItHandler.Forward(totalChar, [&] (auto shakeIt) {
+					shakeItHandler.Forward(totalChar, [&] (const auto& shakeIt) {
 						localShakeFormat = *shakeIt;
 					});
 
@@ -3887,7 +3892,7 @@ public:
 					}
 
 					// non-stack based
-					triggerItHandler.Forward(totalChar, [&] (auto triggerIt) {
+					triggerItHandler.Forward(totalChar, [&] (const auto& triggerIt) {
 						triggerIt->pCharSizeArr = &pCharSizeArr[offset];
 						triggerIt->pCharPosArr = &pCharPosArr[offset];
 					});
@@ -3896,13 +3901,13 @@ public:
 						tagCallbackHandler(tagIt);
 					});
 #endif
-					remarkItHandler.Forward(totalChar, [&] (auto remarkIt) {
+					remarkItHandler.Forward(totalChar, [&] (const auto& remarkIt) {
 						remarkIt->pCharSizeArr = &pCharSizeArr[offset];
 						remarkIt->pCharPosArr = &pCharPosArr[offset];
 						//remarkIt->validLength = (std::min)(pTextLen - offset, remarkIt->baseLength);
 						remarkIt->validLength = (std::min)(opt.renderCharCount - offset, remarkIt->baseLength);
 					});
-					iConItHandler.Forward(totalChar, [&] (auto iConIt) {
+					iConItHandler.Forward(totalChar, [&] (const auto& iConIt) {
 						// use updated position
 						iConIt->x = static_cast<size_t>(positionX);
 						iConIt->y = static_cast<size_t>(positionY);
