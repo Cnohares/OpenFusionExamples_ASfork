@@ -47,15 +47,15 @@
 
 #include	"Macro.h"
 
-#ifdef _OPENMP
-#include	<omp.h>
-#endif
-
 #include	<map>
 #include	<string>
 #include	<chrono>
 
-#ifdef COPY_D3D_TEXTURE
+// Dependents for texture copy
+//  copy hardware decode result directly 
+//  instead of copy to memory first 
+//  then do pixel format conversion
+#ifdef _WIN32
 #ifdef _DEBUG
 #include	"D3D/HookD3D.h"
 #endif
@@ -69,6 +69,7 @@
 
 #include	"Encryption.h"
 #include	"FFMpeg.h"
+#include	"CopyAdapter.h" 
 
 #include	"SDL_Interface.h"
 #include	"SDL_Mixer_Interface.h"
@@ -84,10 +85,6 @@
 // My header
 #include	"Fusion.h"
 #include	"FusionUtilities.h"
-
-#ifdef COPY_D3D_TEXTURE
-#include	"D3D/D3DHandler.h"
-#endif
 
 #include	"WindowsCommon.h"
 #include	"Func.h"

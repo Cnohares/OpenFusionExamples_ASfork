@@ -399,58 +399,88 @@ short WINAPI DLLExport Action_EmbedFont(LPRDATA rdPtr, long param1, long param2)
 	std::wstring FilePath = GetFullPathNameStr((LPCTSTR)CNC_GetStringParameter(rdPtr));
 	LPCTSTR Key = (LPCTSTR)CNC_GetStringParameter(rdPtr);
 
-	bool bFromMem = !StrEmpty(Key);
-	Encryption* E = nullptr;
+	bool bFromMem = !StrEmpty(Key);	
 
+	std::unique_ptr<Encryption> pE = nullptr;
+	
 	if (bFromMem) {
-		E = new Encryption;
-		E->GenerateKey(Key);
+		pE = std::make_unique<Encryption>();		
+		pE->GenerateKey(Key);
 
-		E->OpenFile(FilePath.c_str());
-		E->Decrypt();
+		pE->OpenFile(FilePath.c_str());
+		pE->Decrypt();
 	}
 
-	int ret = 0;
-	DWORD fontNum = 0;
+    auto fontNames = bFromMem
+        ? GetFontNameFromFile((LPCWSTR)pE->GetOutputData(), pE->GetOutputDataLength())
+        : GetFontNameFromFile(FilePath.c_str());
 
-	auto flags = FR_PRIVATE;
+    // already embedded
+    if (rdPtr->pData->FontEmbed(fontNames)) {
+        return 0;
+    }
 
-	//ret = RemoveFontResourceEx(FilePath.c_str(), flags, 0);
-	ret = bFromMem
-		? (int)AddFontMemResourceEx(E->GetOutputData(), E->GetOutputDataLength(), 0, &fontNum)
-		: AddFontResourceEx(FilePath.c_str(), flags, 0);
+	struct GDIEmbedHelper {
+		HANDLE hMem = nullptr;
+		DWORD fontNum = 0;
 
-	if (ret == 0) {
-		return 0;
-	}
+		DWORD flags = FR_PRIVATE;
 
-	auto gdipRet = bFromMem
-		? rdPtr->pData->pFontCollection->AddMemoryFont(E->GetOutputData(), E->GetOutputDataLength())
-		: rdPtr->pData->pFontCollection->AddFontFile(FilePath.c_str());
+		bool EmbedFontFromMemory(PVOID pFileView, DWORD cjSizes){
+			hMem = AddFontMemResourceEx(pFileView, cjSizes, 0, &fontNum);
+			return hMem != nullptr;
+		}
+        bool RemoveFontFromMemory() const {
+			return RemoveFontMemResourceEx(hMem);
+		}
 
-	if (gdipRet != Gdiplus::Status::Ok) {
-		return 0;
-	}
+		bool EmbedFontFromFile(LPCWSTR pName){
+			fontNum = AddFontResourceEx(pName, flags, 0) != 0;
+			return fontNum != 0;
+		}
+        bool RemoveFontFromFile(LPCWSTR pName) const {
+			return RemoveFontResourceEx(pName, flags, 0);
+		}
+	};
 
-	auto fontNames = bFromMem
-		? GetFontNameFromFile((LPCWSTR)E->GetOutputData(), E->GetOutputDataLength())
-		: GetFontNameFromFile(FilePath.c_str());
+	GDIEmbedHelper gdiEmbedHelper = {};
 
-	delete E;
+	// GDI embed, compatible with Fusion built-in string under D3D9
+	// aka replace the old font embed object
+    auto bGDIEmbed = bFromMem
+        ? gdiEmbedHelper.EmbedFontFromMemory(pE->GetOutputData(),
+            pE->GetOutputDataLength())
+        : gdiEmbedHelper.EmbedFontFromFile(FilePath.c_str());
+
+	if (!bGDIEmbed) { return 0;	}
+
+	// NeoStr embed
+    auto bNeoStrEmbed = bFromMem
+        ? rdPtr->pData->EmbedFontFromMemory((const char*)pE->GetOutputData(),
+            (size_t)pE->GetOutputDataLength())
+        : rdPtr->pData->EmbedFontFromFile(FilePath);
 
 #ifdef _FONTEMBEDDEBUG
 	MSGBOX((std::wstring)L"Embed " + FilePath +
-		(std::wstring)(gdipRet != Gdiplus::Status::Ok
-			? L" Not OK"
-			: L" OK"));
- 
-	auto font = rdPtr->pData->pFontCollection->GetFamilyCount();
- 
+		(std::wstring)(bNeoStrEmbed ? L" Not OK" : L" OK"));
+
 	for (auto& i : fontNames) {
 		wprintf(L"%s\n", i.c_str());
 		//std::wcout << i << std::endl;
 	}
 #endif // _FONTEMBEDDEBUG
+
+	// rollback if NeoStr embed failed
+	if (!bNeoStrEmbed) {
+		auto bGDIRemove = bFromMem
+			? gdiEmbedHelper.RemoveFontFromMemory()
+			: gdiEmbedHelper.RemoveFontFromFile(FilePath.c_str());
+
+		return 0;
+	}
+
+	// embed success, add to embed list
+	rdPtr->pData->AddEmbedFont(fontNames);
 
 	//refresh objects
 	ObjectSelection Oc(rdPtr->rHo.hoAdRunHeader);
@@ -664,9 +694,9 @@ short WINAPI DLLExport Action_LinkObject(LPRDATA rdPtr, long param1, long param2
 }
 
 short WINAPI DLLExport Action_SetObjectKeyValue(LPRDATA rdPtr, long param1, long param2) {
-	size_t hash = (size_t)CNC_GetParameter(rdPtr);
+	size_t hash = (size_t)CNC_GetIntParameter(rdPtr);
 	LPSURFACE pSf = (LPSURFACE)CNC_GetParameter(rdPtr);
-	bool bOverWrite = (bool)CNC_GetParameter(rdPtr);
+	bool bOverWrite = (bool)CNC_GetIntParameter(rdPtr);
 
 	rdPtr->iconLibKey = hash;
 	rdPtr->pIConLibValue = pSf;
@@ -698,7 +728,7 @@ short WINAPI DLLExport Action_SetIConScale(LPRDATA rdPtr, long param1, long para
 }
 
 short WINAPI DLLExport Action_SetIConResample(LPRDATA rdPtr, long param1, long param2) {
-	bool bResample = (bool)CNC_GetParameter(rdPtr);
+	bool bResample = (bool)CNC_GetIntParameter(rdPtr);
 
 	rdPtr->bIConResample = bResample;
 
@@ -720,7 +750,7 @@ short WINAPI DLLExport Action_SetRemarkOffset(LPRDATA rdPtr, long param1, long p
 }
 
 short WINAPI DLLExport Action_SetVerticalOffset(LPRDATA rdPtr, long param1, long param2) {
-	bool bVerticalAlignOffset = (bool)CNC_GetParameter(rdPtr);
+	bool bVerticalAlignOffset = (bool)CNC_GetIntParameter(rdPtr);
 
 	rdPtr->bVerticalAlignOffset = bVerticalAlignOffset;
 
@@ -760,7 +790,7 @@ short WINAPI DLLExport Action_Render(LPRDATA rdPtr, long param1, long param2) {
 
 short WINAPI DLLExport Action_SetRenderOption_VisibleRatio(LPRDATA rdPtr, long param1, long param2) {
 	const float visibleRatio = Range(GetFloatParam(rdPtr), 0.0f, 1.0f);
-	const bool bIncludeAlpha = (bool)CNC_GetParameter(rdPtr);
+	const bool bIncludeAlpha = (bool)CNC_GetIntParameter(rdPtr);
 
 	const auto pOpt = static_cast<NeoStr::RenderOptions*>(rdPtr->pRenderOptions);
 
@@ -775,7 +805,7 @@ short WINAPI DLLExport Action_SetRenderOption_VisibleRatio(LPRDATA rdPtr, long p
 }
 
 short WINAPI DLLExport Action_SetRenderOption_TagCallbackIndex(LPRDATA rdPtr, long param1, long param2) {
-	const auto idx = (size_t)CNC_GetParameter(rdPtr) - 1;
+	const auto idx = (size_t)CNC_GetIntParameter(rdPtr) - 1;
 
 	rdPtr->bTagCallbackIndexManaged = false;
 	const auto pOpt = static_cast<NeoStr::RenderOptions*>(rdPtr->pRenderOptions);
@@ -790,7 +820,7 @@ short WINAPI DLLExport Action_SetRenderOption_TagCallbackIndex(LPRDATA rdPtr, lo
 }
 
 short WINAPI DLLExport Action_SetRenderOption_TagCallbackIndexManaged(LPRDATA rdPtr, long param1, long param2) {
-	const auto bManaged = (bool)CNC_GetParameter(rdPtr);
+	const auto bManaged = (bool)CNC_GetIntParameter(rdPtr);
 
 	// no change
 	if (rdPtr->bTagCallbackIndexManaged == bManaged) { return 0; }

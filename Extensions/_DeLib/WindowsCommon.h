@@ -5,11 +5,9 @@
 #include <vector>
 #include <thread>
 
-////Boost
-//#define BOOST
-//#include "RegexHelper.h"
-
 // Windows
+#define NOMINMAX　
+#define WIN32_LEAN_AND_MEAN 
 #include <windows.h>
 
 // Thread
@@ -18,7 +16,7 @@
 #pragma comment(lib,"Kernel32.lib")
 
 // FileList
-#include	<shlwapi.h>
+#include <shlwapi.h>
 #pragma	comment(lib,"shlwapi.lib")
 
 // Memory
@@ -524,4 +522,8 @@ inline std::string ConvertWStrToStr(const std::wstring& input, const UINT codePa
 
 inline std::wstring ConvertStrToWStr(const std::string& input, const UINT codePage = CP_UTF8) {
 	return to_wide_string(input, codePage);
+}
+
+inline void MSGBOX(const std::wstring& content, const std::wstring& title = L"ALERT") {
+    MessageBox(nullptr, content.c_str(), title.c_str(), MB_OK);
 }

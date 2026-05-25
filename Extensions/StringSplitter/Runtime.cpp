@@ -66,7 +66,7 @@ short WINAPI DLLExport CreateRunObject(LPRDATA rdPtr, LPEDATA edPtr, fpcob cobPt
    you should do it here, and free your resources in DestroyRunObject.
 */
 	//Split
-	rdPtr->S = new Split;
+    rdPtr->pSplitter = new Split;
 
 	//Auto Split
 	rdPtr->AutoSplit = false;
@@ -88,7 +88,7 @@ short WINAPI DLLExport CreateRunObject(LPRDATA rdPtr, LPEDATA edPtr, fpcob cobPt
 	rdPtr->CurrentMatchString = nullptr;
 	rdPtr->CurrentReplaceString = nullptr;
 
-	rdPtr->ReplacEachResult = nullptr;
+	rdPtr->ReplaceEachResult = nullptr;
 
 	//Init global data
 	if (GetExtUserData() == nullptr) {
@@ -119,8 +119,33 @@ short WINAPI DLLExport DestroyRunObject(LPRDATA rdPtr, long fast)
    When your object is destroyed (either with a Destroy action or at the end of
    the frame) this routine is called. You must free any resources you have allocated!
 */
-	release_ptr(Splitter);
-	release_str();
+	// release splitter
+	delete rdPtr->pSplitter;
+    rdPtr->pSplitter = nullptr;
+
+	// release strings
+	// Need not to release
+	// 	rdPtr->CurrentSplitStr
+	//	rdPtr->CurrentKeyWord
+	//	rdPtr->CurrentSubString
+	// cause they are pointed to Split class's member value
+	delete[] rdPtr->SplitStrVecLoopName;
+	rdPtr->SplitStrVecLoopName = nullptr;
+
+	delete[] rdPtr->KeyWordPairVecLoopName;
+	rdPtr->KeyWordPairVecLoopName = nullptr;
+
+	delete[] rdPtr->SubStringVecLoopName;
+	rdPtr->SubStringVecLoopName = nullptr;
+
+	delete[] rdPtr->CurrentReplaceString;
+	rdPtr->CurrentReplaceString = nullptr;
+
+	delete[] rdPtr->ReplaceEachResult;
+	rdPtr->ReplaceEachResult = nullptr;
+
+	delete[] rdPtr->ReplaceEachLoopName;
+	rdPtr->ReplaceEachLoopName = nullptr;
 
 	// No errors
 	return 0;

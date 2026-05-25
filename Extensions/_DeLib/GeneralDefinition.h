@@ -1,12 +1,25 @@
 #pragma once
 
-#include <Shlwapi.h>
+// ------------------------------------------
+// include
+// ------------------------------------------
 
+// STL
 #include <string>
 #include <string_view>
 
 #include <vector>
+#include <functional>
+#include <algorithm>
 
+// Custom
+#include "StringTraits.h"
+#include "ArithmeticTraits.h"
+
+// ------------------------------------------
+// Macro Helper
+// ------------------------------------------
+#if defined(MMFEXT) || defined(PROEXT)
 #define Empty_Str	_T("")
 #define Default_Str	_T("")
 
@@ -15,15 +28,6 @@
 
 #define CallEvent(X) callRunTimeFunction(rdPtr, RFUNCTION_GENERATEEVENT, X, 0)
 #define AddEvent(X) callRunTimeFunction(rdPtr, RFUNCTION_PUSHEVENT , X, 0)
-
-#define valid(X) ((X) != nullptr)
-
-#define InvalidStr(STR,RET) if (!valid(STR)) { return RET; }
-
-#define release_ptr(X) if (valid(X)) {delete (X); (X) = nullptr;}
-#define release_arr(X) if (valid(X)) {delete[] (X); (X) = nullptr;}
-
-#define ResetPtr(X) (X) = nullptr;
 
 #define RAD(_DEG) ((PI*(_DEG))/180)
 #define DEG(_RAD) ((180*(_RAD))/PI)
@@ -34,12 +38,26 @@
 #define GetExtUserData() MV->mvGetExtUserData(rdPtr->rHo.hoAdRunHeader->rhApp, hInstLib)
 
 #define TRUNCATE_SHORT(v) ((short)(v) & 0x7FFF)
+#endif
 
 #define CONNECT_STR(l, r) l##r
 #define STRINGIFY(s) #s
 #define CUR_FOLDER CONNECT_STR(__FILE__, "\\..\\")
+
+// Note: if you are using files inside a shard network folder
+// RELATIVE_PATH macro will return a path like \\Mac\Home\Dev
+// which is not supported by the linker.
+// in this case, please use symbolic link (mklink /D) to create a local folder
+// which points to the network folder, and use RELATIVE_PATH with that local folder
+// for example, mklink /D C:\Dev Z:\Mac\Home\Dev
+// depending on your network drive settings.
+// direct link to path like mklink /D C:\Dev \\Mac\Home\Dev is not supported by Windows
+// and path like that cannot open in Explorer either.
 #define RELATIVE_PATH(path) CONNECT_STR(CUR_FOLDER, path)
 
+// ------------------------------------------
+// Constants
+// ------------------------------------------
 constexpr auto CLEAR_MEMRANGE = 128;
 constexpr auto CLEAR_NUMTHRESHOLD = 50;
 
@@ -47,33 +65,37 @@ constexpr auto CLEAR_NUMTHRESHOLD = 50;
 constexpr auto MAX_MEMORYLIMIT = 3 * 1024 + 256;
 constexpr auto DEFAULT_MEMORYLIMIT = 3 * 1024;
 
-// hasher
+// ------------------------------------------
+// Hasher
+// ------------------------------------------
+//   Calculate hash of given object
+//     inline static size_t Hasher(const Object& o) {
+//         size_t seed = ElementNum;
+//         
+//         seed ^= o.ele_1 + HASHER_MOVE(seed);
+//         seed ^= o.ele_2 + HASHER_MOVE(seed);
+//         ...
+//         seed ^= o.ele_ElementNum + HASHER_MOVE(seed);
+//         
+//         return seed;
+//     }
 static constexpr auto HASHER_MAGICNUMBER = 0x9e3779b9;
 static constexpr auto HASHER_MOVE(size_t seed) { return HASHER_MAGICNUMBER + (seed << 6) + (seed >> 2); }
 
-// Usage
-
-// inline static size_t Hasher(const Object& o) {
-	// size_t seed = ElementNum;
-	//
-	// seed ^= o.ele_1 + HASHER_MOVE(seed);
-	// seed ^= o.ele_2 + HASHER_MOVE(seed);
-	// ...
-	// seed ^= o.ele_ElementNum + HASHER_MOVE(seed);
-	//
-	// return seed;
-// }
+// ------------------------------------------
+// Copy string
+// ------------------------------------------
 
 //don't use this func if Str = nullptr, return Default_Str directly
-inline void NewStr(LPWSTR& Tar, const LPCWSTR Str) {
-	release_arr(Tar);
-	const rsize_t total_length = wcslen(Str) + 1;
+inline void NewStr(wchar_t*& Tar, const wchar_t* Str) {
+    if (Tar != nullptr) { delete[] Tar; Tar = nullptr; }
+    const rsize_t total_length = wcslen(Str) + 1;
 
-	Tar = new WCHAR[total_length];
-	wcscpy_s(Tar, total_length, Str);
+    Tar = new wchar_t[total_length];
+    wcscpy_s(Tar, total_length, Str);
 }
 
-inline void NewStr(LPWSTR& Tar, const std::wstring& Str) {
+inline void NewStr(wchar_t*& Tar, const std::wstring& Str) {
 	NewStr(Tar, Str.c_str());
 }
 
@@ -81,73 +103,34 @@ inline void NewStr(std::wstring& Tar, const std::wstring& Str) {
 	Tar = Str;
 }
 
+// ------------------------------------------
+// CodePage conversion
+// ------------------------------------------
+
 // convert string to wstring
 inline bool to_wide_string(std::wstring& output,
-		const char* pSrc, size_t len,
-		const UINT codePage = CP_UTF8) {
-	const int outputLength = MultiByteToWideChar(codePage, 0,
-		pSrc, static_cast<int>(len),
-		nullptr, 0);
-
-	if (outputLength == 0) {
-		return false;
-	}
-
-	output = std::wstring(outputLength, 0);
-	if (!MultiByteToWideChar(codePage, 0,
-		pSrc, static_cast<int>(len),
-		output.data(), outputLength)) {
-		return false;
-	}
-
-	return true;
-}
+        const char* pSrc, size_t len,
+        const unsigned int codePage);
 // convert string to wstring, indicate no error occurs
-inline std::wstring to_wide_string(const std::string& input, const UINT codePage = CP_UTF8) {
-	std::wstring result;
-	to_wide_string(result, input.c_str(), input.length(), codePage);
-
-	return result;
-}
+inline std::wstring to_wide_string(const std::string& input,
+    const unsigned int codePage);
 
 // convert wstring to string
 inline bool to_byte_string(std::string& output,
-		const wchar_t* pSrc, size_t len,
-		const UINT codePage = CP_UTF8) {
-	const int outputLength = WideCharToMultiByte(codePage, 0,
-			pSrc, static_cast<int>(len),
-			nullptr, 0,
-			nullptr, nullptr);
-
-	if (outputLength == 0) {
-		return false;
-	}
-
-	output = std::string(outputLength, 0);
-	if (!WideCharToMultiByte(codePage, 0,
-		pSrc, static_cast<int>(len),
-		output.data(), outputLength,
-		nullptr, nullptr)) {
-		return false;
-	}
-
-	return true;
-}
+        const wchar_t* pSrc, size_t len,
+        const unsigned int codePage);
 // convert wstring to string, indicate no error occurs
-inline std::string to_byte_string(const std::wstring& input, const UINT codePage = CP_UTF8) {
-	std::string result;
-	to_byte_string(result, input.c_str(), input.length(), codePage);
+inline std::string to_byte_string(const std::wstring& input,
+    const unsigned int codePage);
 
-	return result;
-}
+// get unicode codepage
+inline unsigned int GetUnicodeCodePage(bool bUnicode = true);
 
 // general save / load, do conversion
 inline bool LoadData(std::wstring& output,
 	const char* pSrc, size_t len,
 	bool& bUnicode) {
-	if (pSrc == nullptr) {
-		return false;
-	}
+    if (pSrc == nullptr) { return false; }
 
 	// BOM
 	constexpr auto UTF8_SIGNATURE = "\xEF\xBB\xBF";
@@ -159,20 +142,91 @@ inline bool LoadData(std::wstring& output,
 		len -= 3;
 	}
 
-	if (len == 0) {
-		return false;
-	}
+    if (len == 0) { return false; }
 
-	const UINT codePage = bUnicode ? CP_UTF8 : CP_ACP;
-	return to_wide_string(output, pSrc, len, codePage);
+	return to_wide_string(output, pSrc, len, GetUnicodeCodePage(bUnicode));
 }
 // save data and handle unicode    
 inline bool SaveData(std::string& output,
 	const wchar_t* pSrc, const size_t len,
 	bool bUnicode = true) {
-	const UINT codePage = bUnicode ? CP_UTF8 : CP_ACP;
-	return to_byte_string(output, pSrc, len, codePage);
+	return to_byte_string(output, pSrc, len, GetUnicodeCodePage(bUnicode));
 }
+
+// ------------------------------------------
+// CodePage conversion implementation
+// ------------------------------------------
+
+#ifdef _WIN32
+
+// Windows
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN 
+#include <windows.h>
+
+inline bool to_wide_string(std::wstring& output,
+    const char* pSrc, size_t len,
+    const unsigned int codePage = CP_UTF8) {
+    const int outputLength = MultiByteToWideChar(codePage, 0,
+        pSrc, static_cast<int>(len),
+        nullptr, 0);
+
+    if (outputLength == 0) {
+        return false;
+    }
+
+    output = std::wstring(outputLength, 0);
+    if (!MultiByteToWideChar(codePage, 0,
+        pSrc, static_cast<int>(len),
+        output.data(), outputLength)) {
+        return false;
+    }
+
+    return true;
+}
+inline std::wstring to_wide_string(const std::string& input,
+    const unsigned int codePage = CP_UTF8) {
+    std::wstring result;
+    to_wide_string(result, input.c_str(), input.length(), codePage);
+
+    return result;
+}
+
+inline bool to_byte_string(std::string& output,
+    const wchar_t* pSrc, size_t len,
+    const unsigned int codePage = CP_UTF8) {
+    const int outputLength = WideCharToMultiByte(codePage, 0,
+            pSrc, static_cast<int>(len),
+            nullptr, 0,
+            nullptr, nullptr);
+
+    if (outputLength == 0) {
+        return false;
+    }
+
+    output = std::string(outputLength, 0);
+    if (!WideCharToMultiByte(codePage, 0,
+        pSrc, static_cast<int>(len),
+        output.data(), outputLength,
+        nullptr, nullptr)) {
+        return false;
+    }
+
+    return true;
+}
+inline std::string to_byte_string(const std::wstring& input,
+    const unsigned int codePage = CP_UTF8) {
+    std::string result;
+    to_byte_string(result, input.c_str(), input.length(), codePage);
+
+    return result;
+}
+
+inline unsigned int GetUnicodeCodePage(bool bUnicode) {
+   return bUnicode ? CP_UTF8 : CP_ACP;
+}
+
+#endif
 
 // ------------------------------------------
 // Trim
@@ -241,6 +295,85 @@ inline void TrimStr(std::wstring& str,
 	}
 };
 
+// ------------------------------------------
+// Case
+// ------------------------------------------
+
+template<CharConcept T>
+void ToLower(T* pStr, const size_t sz) {
+    for (size_t index = 0; index < sz; index++) {
+        auto& chr = pStr[index];
+        chr = tolower(chr);
+    }
+}
+
+template<StringConcept T>
+void ToLower(T& str) {
+    std::ranges::transform(str, str.begin(), ::tolower);
+}
+
+template<StringConcept T>
+[[nodiscard]] T ToLower(const T& str) {
+    T ret = str;
+    std::ranges::transform(ret, ret.begin(), ::tolower);
+    return ret;
+}
+
+template<CharConcept T>
+void ToUpper(T* pStr, const size_t sz) {
+    for (size_t index = 0; index < sz; index++) {
+        auto& chr = pStr[index];
+        chr = ToUpper(chr);
+    }
+}
+
+template<StringConcept T>
+void ToUpper(T& str) {
+    std::ranges::transform(str, str.begin(), ::toupper);
+}
+
+template<StringConcept T>
+[[nodiscard]] T ToUpper(const T& str) {
+    T ret = str;
+    std::ranges::transform(ret, ret.begin(), ::toupper);
+    return ret;
+}
+
+template<CharConcept T>
+inline bool CharIEqu(const T l, const T r) {
+    return (l == r) || (::tolower(l) == ::tolower(r));
+}
+
+template<CharConcept T>
+inline bool StrEqu(const T* l, const T* r) {
+    if constexpr (std::is_same_v<T, char>) {
+        return strcmp(l, r) == 0;
+    }
+    else {
+        return wcscmp(l, r) == 0;
+    }
+}
+
+template<CharConcept T>
+inline bool StrIEqu(const T* l, const T* r) {
+    if constexpr (std::is_same_v<T, char>) {
+        return _stricmp(l, r) == 0;
+    }
+    else {
+        return _wcsicmp(l, r) == 0;
+    }
+}
+
+template<CharConcept T>
+inline bool StrEmpty(const T* pStr) {
+    if constexpr (std::is_same_v<T, char>) {
+        return StrEqu(pStr, "");
+    }
+    else {
+        return StrEqu(pStr, L"");
+    }
+}
+
 inline bool StringViewEqu(const std::wstring_view& str, const LPCWSTR pStr) {
 	const auto length = wcslen(pStr);
 
@@ -265,7 +398,7 @@ inline bool StringViewIEqu(const std::wstring_view& l, const std::wstring_view& 
 	}
 
 	for (size_t i = 0; i < length; i++) {
-		if (ChrCmpIW(l[i], r[i]) != 0) {
+		if (!CharIEqu(l[i], r[i])) {
 			return false;
 		}
 	}
@@ -281,7 +414,7 @@ inline bool StringViewIEqu(const std::wstring_view& str, const LPCWSTR pStr) {
 	}
 
 	for (size_t i = 0; i < length; i++) {
-		if (ChrCmpIW(str[i], pStr[i]) != 0) {
+		if (!CharIEqu(str[i], pStr[i])) {
 			return false;
 		}
 	}
@@ -312,7 +445,7 @@ inline bool StringIAppend(const LPCWSTR pL, const LPCWSTR pR) {
 	if (lLength > rLength) { return false; }
 
 	for (size_t i = 0; i < lLength; i++) {
-		if (ChrCmpIW(pL[i], pR[i]) != 0) {
+		if (!CharIEqu(pL[i], pR[i])) {
 			return false;
 		}
 	}
@@ -324,45 +457,9 @@ inline std::wstring StringViewToString(const std::wstring_view& str) {
 	return { str.data(), str.size() };
 }
 
-// MSGBOX
-#include "StrNum.h"
-
-inline void MSGBOX(const std::wstring& content, const std::wstring& title = L"ALERT") {
-	MessageBox(nullptr, content.c_str(), title.c_str(), MB_OK);
-}
-
+// ------------------------------------------
 // basic split
-#include <functional>
-#include "StringTraits.h"
-
-template<CharConcept T>
-inline bool StrEqu(const T* l, const T* r) {
-	 if constexpr(std::is_same_v<T, char>) {
-		 return strcmp(l, r) == 0;
-	 }else {
-		 return wcscmp(l, r) == 0;
-	 }
-}
-
-template<CharConcept T>
-inline bool StrIEqu(const T* l, const T* r) {
-	if constexpr (std::is_same_v<T, char>) {
-		return _stricmp(l, r) == 0;
-	}
-	else {
-		return _wcsicmp(l, r) == 0;
-	}
-}
-
-template<CharConcept T>
-inline bool StrEmpty(const T* pStr) {
-	if constexpr (std::is_same_v<T, char>) {
-		return StrEqu(pStr, "");
-	}
-	else {
-		return StrEqu(pStr, L"");
-	}
-}
+// ------------------------------------------
 
 // split string by delimiter
 template<CharConcept T>
@@ -429,15 +526,23 @@ inline std::vector<std::basic_string<T>> SplitString(const std::basic_string<T>&
 		});
 }
 
-template<typename T>
+// ------------------------------------------
+// Range
+// ------------------------------------------
+
+template<ArithmeticConcept T>
 inline T Range(T v, T minv, T maxv) {
 	return (std::max)(minv, (std::min)(maxv, v));
 }
 
-template<typename T>
+template<ArithmeticConcept T>
 inline void UpdateRange(T& v, T minv, T maxv) {
 	v = (std::max)(minv, (std::min)(maxv, v));
 }
+
+// ------------------------------------------
+// float compare
+// ------------------------------------------
 
 // https://stackoverflow.com/questions/4915462/how-should-i-do-floating-point-comparison
 template<typename T>
@@ -480,6 +585,10 @@ inline bool NearlyEqualLDBL(const long double a, const long double b,
 	return NearlyEqualCore<long double>(a, b, epsilon, abs_th);
 }
 
+// ------------------------------------------
+// Insert sort
+// ------------------------------------------
+
 template<typename T>
 typename std::vector<T>::iterator
 InsertSortedUpperBound(std::vector<T>& vec, T const& item) {
@@ -501,44 +610,3 @@ InsertSortedLowerBound(std::vector<T>& vec, T const& item, Pred pred) {
 	return vec.insert(std::lower_bound(vec.begin(), vec.end(), item, pred), item);
 }
 
-#include<algorithm>
-
-template<CharConcept T>
-void ToLower(T* pStr, const size_t sz) {
-    for(size_t index = 0;index<sz;index++) {
-        auto& chr = pStr[index];
-        chr = tolower(chr);
-    }
-}
-
-template<StringConcept T>
-void ToLower(T& str) {
-    std::ranges::transform(str, str.begin(), ::tolower);
-}
-
-template<StringConcept T>
-[[nodiscard]] T ToLower(const T& str) {
-    T ret = str;
-    std::ranges::transform(ret, ret.begin(), ::tolower);
-    return ret;
-}
-
-template<CharConcept T>
-void ToUpper(T* pStr, const size_t sz) {
-    for (size_t index = 0; index < sz; index++) {
-        auto& chr = pStr[index];
-        chr = ToUpper(chr);
-    }
-}
-
-template<StringConcept T>
-void ToUpper(T& str) {
-    std::ranges::transform(str, str.begin(), ::toupper);
-}
-
-template<StringConcept T>
-[[nodiscard]] T ToUpper(const T& str) {
-    T ret = str;
-    std::ranges::transform(ret, ret.begin(), ::ToUpper);
-    return ret;
-}

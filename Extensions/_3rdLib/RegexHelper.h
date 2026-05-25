@@ -1,6 +1,6 @@
 #pragma once
 
-#ifndef BOOST
+#ifndef USE_BOOST_REGEX
 
 #include <regex>
 
@@ -19,6 +19,7 @@ using std::regex_constants::optimize;
 
 #else
 
+#include <boost/version.hpp>
 #include <boost/regex.hpp>
 
 using boost::wregex;

@@ -52,7 +52,6 @@ extern "C" {
 //#pragma comment(lib,"avfilter.lib")
 //#pragma comment(lib,"avformat.lib")
 //#pragma comment(lib,"avutil.lib")
-//#pragma comment(lib,"postproc.lib")
 //#pragma comment(lib,"swresample.lib")
 //#pragma comment(lib,"swscale.lib")
 
@@ -1981,6 +1980,10 @@ public:
 	inline const wchar_t* get_hwDeviceName() const {
 		return get_hwDeviceNameByType(bHWDecode ? hw_type : AV_HWDEVICE_TYPE_NONE);
 	}
+
+    inline AVHWDeviceType get_hwDeviceType() const {
+        return bHWDecode ? hw_type : AV_HWDEVICE_TYPE_NONE;
+    }
 
 	inline static const wchar_t* get_hwDeviceNameByType(const AVHWDeviceType type) {
 		switch (type)

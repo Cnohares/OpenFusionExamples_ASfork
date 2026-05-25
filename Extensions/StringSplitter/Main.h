@@ -141,7 +141,7 @@ typedef struct tagRDATA
 	GlobalData* pData;
 
 	//Split
-	Split* S;
+	Split* pSplitter;
 	
 	//Auto Split
 	bool AutoSplit = false;
@@ -164,7 +164,7 @@ typedef struct tagRDATA
 	LPCWSTR CurrentMatchString = nullptr;
 	LPWSTR CurrentReplaceString = nullptr;
 
-	LPWSTR ReplacEachResult = nullptr;
+	LPWSTR ReplaceEachResult = nullptr;
 } RUNDATA;
 typedef	RUNDATA	*			LPRDATA;
 
