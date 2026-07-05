@@ -209,8 +209,6 @@ typedef struct tagRDATA
 
 	LPPARAMMAP GlobalTempParam;		// name independent
 	
-	LPWSTR OutPut = nullptr;
-
 	std::wstring* pPreviousFuncName = nullptr;
 	Data defaultData;
 
