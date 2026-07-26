@@ -103,9 +103,6 @@ short WINAPI DLLExport CreateRunObject(LPRDATA rdPtr, LPEDATA edPtr, fpcob cobPt
 	rdPtr->RecursiveIndex = new LIDX;
 	rdPtr->RecursiveIndex->reserve(DefaultVecSize);
 
-	//rdPtr->OutPut = new STRING;
-	rdPtr->OutPut = nullptr;
-
 	rdPtr->pPreviousFuncName = new std::wstring;
 	rdPtr->defaultData = Data();
 
@@ -155,8 +152,6 @@ short WINAPI DLLExport DestroyRunObject(LPRDATA rdPtr, long fast)
 	delete rdPtr->FuncCurLoopIndex;
 
 	delete rdPtr->RecursiveIndex;
-	
-	release_arr(rdPtr->OutPut);
 
 	delete rdPtr->pPreviousFuncName;
 

@@ -898,16 +898,14 @@ long WINAPI DLLExport Expression_TernaryRV(LPRDATA rdPtr,long param1) {
 long WINAPI DLLExport Expression_TernaryRS(LPRDATA rdPtr, long param1) {
 	const bool Result = (bool)CNC_GetFirstExpressionParameter(rdPtr, param1, TYPE_INT);
 
-	const std::wstring ReturnA = (LPCTSTR)CNC_GetNextExpressionParameter(rdPtr, param1, TYPE_STRING);
-	const std::wstring ReturnB = (LPCTSTR)CNC_GetNextExpressionParameter(rdPtr, param1, TYPE_STRING);
-
-	NewStr(rdPtr->OutPut, Result ? ReturnA : ReturnB);
+	const auto ReturnA = (LPCTSTR)CNC_GetNextExpressionParameter(rdPtr, param1, TYPE_STRING);
+	const auto ReturnB = (LPCTSTR)CNC_GetNextExpressionParameter(rdPtr, param1, TYPE_STRING);
 
 	//Setting the HOF_STRING flag lets MMF know that you are a string.
 	rdPtr->rHo.hoFlags |= HOF_STRING;
 
 	//This returns a pointer to the string for MMF.
-	return (long)rdPtr->OutPut;
+	return (long)(Result ? ReturnA : ReturnB);
 }
 
 long WINAPI DLLExport Expression_GetCurrentFuncName(LPRDATA rdPtr, long param1) {
